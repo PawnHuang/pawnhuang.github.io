@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.2">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<link rel="stylesheet" href="//fonts.googleapis.com/css?family=Lato:300,300italic,400,400italic,700,700italic|Lobster Two:300,300italic,400,400italic,700,700italic|PT Mono:300,300italic,400,400italic,700,700italic&display=swap&subset=latin,latin-ext">
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"pawnhuang.github.io","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="前言在Java多线程编程中，synchronized一直是元老级角色，很多人称呼它为重量级锁，但是随着Java SE1.6对其进行了各种优化之后，有些情况下它就不再那么重了，我们先看下利用synchronized实现同步的基础：Java中每一个对象都可以作为锁，具体表现为以下三种： 1、对于普通同步方法，锁是当前实例对象；2、对于静态同步方法，锁是当前类的Class对象；3、对于同步方法块，锁是s">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Java并发编程之synchronized详解">
+<meta property="og:url" content="https://pawnhuang.github.io/2021/04/15/Java%E5%B9%B6%E5%8F%91%E7%BC%96%E7%A8%8B%E4%B9%8Bsynchronized%E8%AF%A6%E8%A7%A3/index.html">
+<meta property="og:site_name" content="Fake it till you make it">
+<meta property="og:description" content="前言在Java多线程编程中，synchronized一直是元老级角色，很多人称呼它为重量级锁，但是随着Java SE1.6对其进行了各种优化之后，有些情况下它就不再那么重了，我们先看下利用synchronized实现同步的基础：Java中每一个对象都可以作为锁，具体表现为以下三种： 1、对于普通同步方法，锁是当前实例对象；2、对于静态同步方法，锁是当前类的Class对象；3、对于同步方法块，锁是s">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://i.loli.net/2021/04/15/HiXUza5R1jWtJAb.png">
+<meta property="og:image" content="https://i.loli.net/2021/04/15/sJkZDfxPactWqmB.png">
+<meta property="og:image" content="https://i.loli.net/2021/04/15/ovfFE9J5Kcj2aRM.png">
+<meta property="og:image" content="https://i.loli.net/2021/04/15/8o4eCyKYrQtOL6s.png">
+<meta property="og:image" content="https://i.loli.net/2021/04/15/pIjkg46uB2Q1c3v.png">
+<meta property="article:published_time" content="2021-04-15T13:59:38.000Z">
+<meta property="article:modified_time" content="2024-08-28T15:10:57.897Z">
+<meta property="article:author" content="Pawn Huang">
+<meta property="article:tag" content="并发">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://i.loli.net/2021/04/15/HiXUza5R1jWtJAb.png">
+
+<link rel="canonical" href="https://pawnhuang.github.io/2021/04/15/Java%E5%B9%B6%E5%8F%91%E7%BC%96%E7%A8%8B%E4%B9%8Bsynchronized%E8%AF%A6%E8%A7%A3/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Java并发编程之synchronized详解 | Fake it till you make it</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Fake it till you make it</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Pawn Huang's Blog</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://pawnhuang.github.io/2021/04/15/Java%E5%B9%B6%E5%8F%91%E7%BC%96%E7%A8%8B%E4%B9%8Bsynchronized%E8%AF%A6%E8%A7%A3/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/upload/avatar.png">
+      <meta itemprop="name" content="Pawn Huang">
+      <meta itemprop="description" content="一个非典型程序员">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Fake it till you make it">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Java并发编程之synchronized详解
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2021-04-15 21:59:38" itemprop="dateCreated datePublished" datetime="2021-04-15T21:59:38+08:00">2021-04-15</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2024-08-28 23:10:57" itemprop="dateModified" datetime="2024-08-28T23:10:57+08:00">2024-08-28</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%8A%80%E6%9C%AF/" itemprop="url" rel="index"><span itemprop="name">技术</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">本文字数：</span>
+              <span>5.2k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">阅读时长 &asymp;</span>
+              <span>5 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>在Java多线程编程中，synchronized一直是元老级角色，很多人称呼它为重量级锁，但是随着Java SE1.6对其进行了各种优化之后，有些情况下它就不再那么重了，我们先看下利用synchronized实现同步的基础：Java中每一个对象都可以作为锁，具体表现为以下三种：</p>
+<p>1、对于普通同步方法，锁是当前实例对象；<br>2、对于静态同步方法，锁是当前类的Class对象；<br>3、对于同步方法块，锁是synchronized括号里配置的对象。</p>
+<p>synchronized用的锁是存在Java对象头里的，所以要深入了解synchronizd，需要先了解JVM中的对象头，它是实现synchronized的基础。</p>
+<span id="more"></span>
+
+<h2 id="JAVA对象头"><a href="#JAVA对象头" class="headerlink" title="JAVA对象头"></a>JAVA对象头</h2><p>在HotSpot虚拟机中，对象在内存中存储的布局可以分为3块区域：对象头（Header）、实例数据（Instance Data）和对齐填充（Padding）。</p>
+<p><strong>对象头：</strong> HotSpot虚拟机的对象头包括两部分信息，第一部分用于存储对象自身运行时数据，如哈希吗、GC分代年龄、锁状态标志、线程持有的锁、偏向线程ID、偏向时间戳等。这部分数据长度在32位和64位虚拟机中分别为32bit和64bit，称为“Mark Word”。对象头的另外一部分是类型指针，即对象指向它的类元数据的指针，虚拟机通过这个指针来确定这个对象是哪个类的实例。<br>Java对象头一般占有两个机器码（在32位虚拟机中，1个机器码等于4字节，也就是32bit），但是如果对象是数组类型，则需要三个机器码，因为JVM可以通过Java对象的元数据信息确定Java对象的大小，但是无法从数组的元数据来确认数组的大小，所以用一块来记录数组长度。</p>
+<p><strong>实例数据：</strong> 实例数据部分是对象真正存储的有效信息，也是在程序代码中所定义的各种类型的字段内容，无论是从父类集成下来的，还是在子类中定义的，都需要记录下来。</p>
+<p><strong>对齐填充：</strong>对齐填充并不是必然存在的，它仅仅起着占位符的作用，由于HotSpot虚拟机的自动内存管理系统要求对象起始地址必须是8字节的整数倍，因此，当实例对象数据部分没有对齐时，就需要通过对齐填充来补全。</p>
+<p>Java对象头是实现锁的关键，我们重点分析它。下面是32位HotSpot虚拟机的Mark Word默认存储结构。<br><img src="https://i.loli.net/2021/04/15/HiXUza5R1jWtJAb.png" alt="1"></p>
+<p>由于对象头的信息是与对象自身定义的数据没有关系的额外存储成本，因此考虑到虚拟机的空间效率，Mark Word 被设计成为一个非固定的数据结构，以便在极小的空间内存储尽量多的信息，它会根据对象本身的状态复用自己的存储空间，如32位HotSpot虚拟机下，除了上述列出的Mark Word默认存储结构外，还有如下可能变化的结构<br><img src="https://i.loli.net/2021/04/15/sJkZDfxPactWqmB.png" alt="2"></p>
+<p>其中轻量级锁和偏向锁是Java SE1.6 对 synchronized 锁进行优化后新增加的，稍后我们会简要分析。这里我们主要分析一下重量级锁，即synchronized的对象锁，锁标识位为10，其中指针指向的是monitor对象（也称为管程或监视器锁）的起始地址。每个对象都存在着一个monitor与之关联，对象与其monitor之间的关系有存在多种实现方式，如monitor可以与对象一起创建销毁或当线程试图获取对象锁时自动生成，当一个monitor被某个线程持有后，它便处于锁定状态。在HotSpot虚拟机中，monitor是由ObjectMonitor实现的，其主要数据结构如下</p>
+<figure class="highlight sqf"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">ObjectMonitor() &#123;</span><br><span class="line">    <span class="variable">_header</span>       = NULL;</span><br><span class="line">    <span class="variable">_count</span>        = <span class="number">0</span>;</span><br><span class="line">    <span class="variable">_waiters</span>      = <span class="number">0</span>,</span><br><span class="line">    <span class="variable">_recursions</span>   = <span class="number">0</span>;</span><br><span class="line">    <span class="variable">_object</span>       = NULL;</span><br><span class="line">    <span class="variable">_owner</span>        = NULL;</span><br><span class="line">    <span class="variable">_WaitSet</span>      = NULL;</span><br><span class="line">    <span class="variable">_WaitSetLock</span>  = <span class="number">0</span> ;</span><br><span class="line">    <span class="variable">_Responsible</span>  = NULL ;</span><br><span class="line">    <span class="variable">_succ</span>         = NULL ;</span><br><span class="line">    <span class="variable">_cxq</span>          = NULL ;</span><br><span class="line">    FreeNext      = NULL ;</span><br><span class="line">    <span class="variable">_EntryList</span>    = NULL ;</span><br><span class="line">    <span class="variable">_SpinFreq</span>     = <span class="number">0</span> ;</span><br><span class="line">    <span class="variable">_SpinClock</span>    = <span class="number">0</span> ;</span><br><span class="line">    OwnerIsThread = <span class="number">0</span> ;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>ObjectMonitor对象中有两个队列：</p>
+<p>_WaitSet ：处于wait状态的线程，会被加入到wait set。</p>
+<p>_EntryList：处于等待锁block状态的线程，会被加入到entry set。</p>
+<p>当线程获取到对象的monitor后进入_owner区域并把ObjectMonitor中的_owner变量设置为当前线程，同时ObjectMonitor中的计数器_recursions加1，_recursions初始值为0。若线程调用wait() 方法，将释放当前持有的ObjectMonitor，_owner变量恢复为null，_recursions自减1，同时该线程进入_WaitSet集合中等待被唤醒。若当前线程执行完毕也将释放ObjectMonitor (锁)并复位变量的值，以便其他线程进入获取ObjectMonitor (锁)。如下图所示<br><img src="https://i.loli.net/2021/04/15/ovfFE9J5Kcj2aRM.png" alt="3"></p>
+<p>在Java早期版本中，synchronized属于重量级锁，效率低下，因为监视器锁（monitor）是依赖于底层的操作系统的Mutex Lock来实现的，而操作系统实现线程之间的切换时需要从用户态转换到核心态，这个状态之间的转换需要相对比较长的时间，时间成本相对较高；而且，线程的互斥同步是通过阻塞实现的，挂起线程与恢复线程的操作也都需要转入内核态中完成，给系统的并发性能带来很大压力，这也是为什么早期的synchronized效率低的原因。</p>
+<p>Java SE1.6之后，为了减少获得锁和释放锁所带来的性能消耗，虚拟机开发团队对synchronized锁进行了多种优化，接下来我们来了解一下他们在虚拟机层面对synchronized锁的优化。</p>
+<h2 id="synchronized锁优化"><a href="#synchronized锁优化" class="headerlink" title="synchronized锁优化"></a>synchronized锁优化</h2><p>高效并发是从JDK1.5到JDK1.6的一个重要改进，HotSpot虚拟机开发团队在这个版本上花费了大量的精力去实现各种锁优化技术。如适应性自旋、锁消除、锁粗化、轻量级锁和偏向锁等，这些技术都是为了在线程之间更高效地共享数据，以及解决竞争问题。Java SE1.6里锁一共有四种状态，无锁状态，偏向锁状态，轻量级锁状态和重量级锁状态，它会随着竞争情况逐渐升级。锁可以升级但不能降级。</p>
+<h2 id="自旋锁和适应性自旋"><a href="#自旋锁和适应性自旋" class="headerlink" title="自旋锁和适应性自旋"></a>自旋锁和适应性自旋</h2><p>虚拟机开发团队注意到在许多应用上，共享数据的锁定状态只会持续很短的一段时间，为了这段时间去挂起和恢复线程并不值得，这时，我们就可以让后面请求锁的线程“稍等一下”，但不放弃处理器的执行时间，看看持有锁的线程是否很快就会释放锁。为了让线程等待，我们只需要让线程执行一个忙循环（自旋），这就是所谓的自旋锁。</p>
+<p>自旋等待本身虽然避免了线程切换的开销，但它是要占用处理器时间的，因此，如果，自旋等待的时间很短，那自旋等待的效果就很好，否则，自旋的线程就只会白白消耗处理器资源，反而会带来性能上的浪费。因此，自旋等待必须要有一定的限度，如果超过限定的自旋次数仍没有成功获取锁，就应当使用传统的方式去挂起线程。</p>
+<p>Java SE1.6引入了自适应的自旋锁。自适应意味着自旋的时间不在固定了，而是由前一次在同一个锁上的自旋时间以及锁的拥有者的状态来决定。线程如果自旋成功了，那么下次自旋的次数会更加多，因为虚拟机认为既然上次成功了，那么此次自旋也很有可能会再次成功，那么它就会允许自旋等待持续的次数更多。反之，如果对于某个锁，很少有自旋能够成功的，那么在以后要或者这个锁的时候自旋的次数会减少甚至省略掉自旋过程，以免浪费处理器资源。</p>
+<p>有了自适应自旋锁，随着程序运行和性能监控信息的不断完善，虚拟机对程序锁的状况预测会越来越准确，虚拟机会变得越来越聪明。</p>
+<h2 id="消除锁"><a href="#消除锁" class="headerlink" title="消除锁"></a>消除锁</h2><p>锁消除是指虚拟机即时编译器在运行时，对一些代码上要求同步，但是被检测到不可能存在共享数据竞争的锁进行消除。锁消除的主要判定依据来源于逃逸分析的数据支持，如果判断在一段代码中，堆上的所有数据都不会逃逸出去从而被其他线程访问到，那就可以把它们当做栈上数据对待，认为它们是线程私有的，自然就不需要同步加锁了。</p>
+<p>如下述代码</p>
+<figure class="highlight typescript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="title class_">String</span> <span class="title function_">concatString</span>(<span class="params"><span class="title class_">String</span> s1, <span class="title class_">String</span> s2, <span class="title class_">String</span> s3</span>) &#123;</span><br><span class="line">    <span class="title class_">StringBuffer</span> stringBuffer = <span class="keyword">new</span> <span class="title class_">StringBuffer</span>();</span><br><span class="line">    stringBuffer.<span class="title function_">append</span>(s1);</span><br><span class="line">    stringBuffer.<span class="title function_">append</span>(s2);</span><br><span class="line">    stringBuffer.<span class="title function_">append</span>(s3);</span><br><span class="line"> </span><br><span class="line">    <span class="keyword">return</span> stringBuffer.<span class="title function_">toString</span>();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>每一个StringBuffer.append()方法中都有一个同步块，锁就是stringBuffer对象，虚拟机观察到stringBuffer的作用域被限制在concatString()方法内部。即stringBuffer的所有引用都不会逃逸到该方法之外，其他线程无法访问到它，因此，虽然这里有锁，但是可以被安全的消除掉。</p>
+<h2 id="锁粗化"><a href="#锁粗化" class="headerlink" title="锁粗化"></a>锁粗化</h2><p>我们知道在使用同步锁的时候，需要让同步块的作用范围尽可能小，仅在共享数据的实际作用域中才进行同步，这样做的目的是为了使需要同步的操作数量尽可能缩小，如果存在锁竞争，那么等待锁的线程也能尽快拿到锁。</p>
+<p>大部分情况下，上述原则都是正确的，但是如果一系列的连续操作都是对同一个对象反复进行加锁和解锁，即使没有线程竞争，但是频繁的进行互斥同步操作也会带来不必要的性能消耗，所以引入锁粗化的概念，就是将多个连续的加锁、解锁操作连接在一起，扩展成一个范围更大的锁。如锁消除中的代码，可以将锁扩展到第一个append()方法之前直至最后一个append()方法之后，这样，只需要加锁一次就可以了。</p>
+<h2 id="轻量级锁"><a href="#轻量级锁" class="headerlink" title="轻量级锁"></a>轻量级锁</h2><p>引入轻量级锁的主要目的是在多没有多线程竞争的前提下，减少传统的重量级锁使用操作系统互斥量产生的性能消耗。当关闭偏向锁功能或者多个线程竞争偏向锁导致偏向锁升级为轻量级锁，则会尝试获取轻量级锁，其步骤如下： </p>
+<h3 id="获取锁"><a href="#获取锁" class="headerlink" title="获取锁"></a>获取锁</h3><p>1、在代码进入同步块时，如果此对象没有被锁定（锁标志位为01），则虚拟机首先将在当前线程的栈帧中建立一个名为锁记录（Lock Record）的空间，用于存储锁对象目前的Mark Word的拷贝（官方把这份拷贝加了一个Displaced前缀，即Displaced Mark Word）；若此对象已经被锁定，则转至步骤3。</p>
+<p>2、虚拟机使用CAS操作尝试将对象的Mark Word更新为指向Lock Record的指针，如果成功表示竞争到锁，则将锁标志位变成00（表示此对象处于轻量级锁状态），执行同步操作；若竞争失败，则转至步骤3。</p>
+<p>3、虚拟机检查对象的Mark Word是否指向当前线程的栈帧，如果是则表示当前线程已经持有当前对象的锁，则直接执行同步代码块；否则只能说明该锁对象已经被其他线程抢占了，这时轻量级锁需要膨胀为重量级锁，锁标志位变成10，后面等待的线程将会进入阻塞状态。</p>
+<h3 id="释放锁"><a href="#释放锁" class="headerlink" title="释放锁"></a>释放锁</h3><p>它的解锁过程也是通过CAS操作来完成的。</p>
+<p>1、用CAS操作将当前对象的Mark Word和线程中的Displaced Mark Word替换回来，若替换成功，则整个同步过程就完成了，否则执行步骤2。</p>
+<p>2、如果CAS操作替换失败，说明有其他线程尝试获取该锁，则需要在释放锁的同时需要唤醒被挂起的线程。</p>
+<p>对于轻量级锁，其性能提升的依据是“对于绝大部分的锁，在整个生命周期内都是不会存在竞争的”，这只是一个经验数据。如果没有竞争，轻量级锁使用CAS操作避免了使用互斥量的开销；但如果存在锁竞争，除了互斥量的开销，还有额外的CAS操作，因此在有多线程竞争的情况下，轻量级锁比重量级锁更慢。</p>
+<p>下图是轻量级锁的获取和释放过程 <br><img src="https://i.loli.net/2021/04/15/8o4eCyKYrQtOL6s.png" alt="4"></p>
+<h2 id="偏向锁"><a href="#偏向锁" class="headerlink" title="偏向锁"></a>偏向锁</h2><p>偏向锁的目的是消除数据在无竞争情况下的同步原语，进一步提升程序的运行性能。轻量级锁的加锁解锁操作是需要依赖多次CAS原子操作的，那偏向锁就是在无竞争的条件下，通过减少CAS操作的次数来获取锁。</p>
+<h3 id="获取锁-1"><a href="#获取锁-1" class="headerlink" title="获取锁"></a>获取锁</h3><p>1、当锁对象第一次被线程获取时，将锁标志位设为01，即偏向模式。</p>
+<p>2、使用CAS操作将线程ID记录到对象的Mark Word中，若CAS操作成功，则持有偏向锁的线程以后每次进入同步块时，虚拟机都不会进行任何同步操作；否则，执行步骤3。</p>
+<p>3、通过CAS竞争锁失败，证明当前存在多线程竞争情况，当到达全局安全点，获得偏向锁的线程被挂起，偏向锁升级为轻量级锁，然后被阻塞在安全点的线程继续往下执行同步代码块。</p>
+<h3 id="释放锁-1"><a href="#释放锁-1" class="headerlink" title="释放锁"></a>释放锁</h3><p>偏向锁的释放采用了一种只有竞争才会释放锁的机制，线程是不会主动去释放偏向锁，需要等待其他线程来竞争。偏向锁的撤销需要等待全局安全点（这个时间点是上没有正在执行的代码）。其步骤如下：</p>
+<p>1、暂停拥有偏向锁的线程，判断锁对象是否还处于被锁定状态。</p>
+<p>2、撤销偏向锁，恢复到无锁状态（01）或者轻量级锁的状态。</p>
+<p>下图是偏向锁的获取和释放流程<br><img src="https://i.loli.net/2021/04/15/pIjkg46uB2Q1c3v.png" alt="5"></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%B9%B6%E5%8F%91/" rel="tag"># 并发</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2021/04/14/Condition%E8%AF%A6%E8%A7%A3/" rel="prev" title="Condition详解">
+      <i class="fa fa-chevron-left"></i> Condition详解
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2021/04/16/Java%E8%99%9A%E6%8B%9F%E6%9C%BA%EF%BC%9AJava%E5%86%85%E5%AD%98%E5%8C%BA%E5%9F%9F/" rel="next" title="Java虚拟机：Java内存区域">
+      Java虚拟机：Java内存区域 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%89%8D%E8%A8%80"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#JAVA%E5%AF%B9%E8%B1%A1%E5%A4%B4"><span class="nav-number">2.</span> <span class="nav-text">JAVA对象头</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#synchronized%E9%94%81%E4%BC%98%E5%8C%96"><span class="nav-number">3.</span> <span class="nav-text">synchronized锁优化</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%87%AA%E6%97%8B%E9%94%81%E5%92%8C%E9%80%82%E5%BA%94%E6%80%A7%E8%87%AA%E6%97%8B"><span class="nav-number">4.</span> <span class="nav-text">自旋锁和适应性自旋</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%B6%88%E9%99%A4%E9%94%81"><span class="nav-number">5.</span> <span class="nav-text">消除锁</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%94%81%E7%B2%97%E5%8C%96"><span class="nav-number">6.</span> <span class="nav-text">锁粗化</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%BD%BB%E9%87%8F%E7%BA%A7%E9%94%81"><span class="nav-number">7.</span> <span class="nav-text">轻量级锁</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%8E%B7%E5%8F%96%E9%94%81"><span class="nav-number">7.1.</span> <span class="nav-text">获取锁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%87%8A%E6%94%BE%E9%94%81"><span class="nav-number">7.2.</span> <span class="nav-text">释放锁</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%81%8F%E5%90%91%E9%94%81"><span class="nav-number">8.</span> <span class="nav-text">偏向锁</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%8E%B7%E5%8F%96%E9%94%81-1"><span class="nav-number">8.1.</span> <span class="nav-text">获取锁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%87%8A%E6%94%BE%E9%94%81-1"><span class="nav-number">8.2.</span> <span class="nav-text">释放锁</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Pawn Huang"
+      src="/upload/avatar.png">
+  <p class="site-author-name" itemprop="name">Pawn Huang</p>
+  <div class="site-description" itemprop="description">一个非典型程序员</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">1</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">8</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Pawn Huang</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+    <span title="站点总字数">152k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">2:18</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://pisces.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Pisces</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

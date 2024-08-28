@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.2">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<link rel="stylesheet" href="//fonts.googleapis.com/css?family=Lato:300,300italic,400,400italic,700,700italic|Lobster Two:300,300italic,400,400italic,700,700italic|PT Mono:300,300italic,400,400italic,700,700italic&display=swap&subset=latin,latin-ext">
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"pawnhuang.github.io","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="前言缓存使用在现在的项目中非常常见，缓存在为我们带来便利的同时，也会带来一些常见的问题，如果不谨慎使用，可能会带来意想不到的结果。 面试中，缓存使用带来的各种问题也是面试官喜欢考察的点，今天我将跟大家一起探讨以下几个常见的问题：  如何保证数据库和缓存的数据一致性？ 先操作数据库 or 先操作缓存？ 失效缓存 or 更新缓存？ 缓存的常见设计模式有哪些？">
+<meta property="og:type" content="article">
+<meta property="og:title" content="缓存使用：如何保证数据一致性、缓存设计模式">
+<meta property="og:url" content="https://pawnhuang.github.io/2021/04/28/%E7%BC%93%E5%AD%98%E4%BD%BF%E7%94%A8%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BF%9D%E8%AF%81%E6%95%B0%E6%8D%AE%E4%B8%80%E8%87%B4%E6%80%A7%E3%80%81%E7%BC%93%E5%AD%98%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F/index.html">
+<meta property="og:site_name" content="Fake it till you make it">
+<meta property="og:description" content="前言缓存使用在现在的项目中非常常见，缓存在为我们带来便利的同时，也会带来一些常见的问题，如果不谨慎使用，可能会带来意想不到的结果。 面试中，缓存使用带来的各种问题也是面试官喜欢考察的点，今天我将跟大家一起探讨以下几个常见的问题：  如何保证数据库和缓存的数据一致性？ 先操作数据库 or 先操作缓存？ 失效缓存 or 更新缓存？ 缓存的常见设计模式有哪些？">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://i.loli.net/2021/04/28/FxWlkwTbHpvcC5J.png">
+<meta property="og:image" content="https://i.loli.net/2021/04/28/6zPkSiXGuNMoIdQ.png">
+<meta property="og:image" content="https://i.loli.net/2021/04/28/bsT8tD35qxC2QHc.png">
+<meta property="og:image" content="https://i.loli.net/2021/04/28/zSQNUincFBLm6ax.png">
+<meta property="og:image" content="https://i.loli.net/2021/04/28/g6aCTFuixeH3GcD.png">
+<meta property="og:image" content="https://i.loli.net/2021/04/28/5imrc4nexJR9PSh.png">
+<meta property="og:image" content="https://i.loli.net/2021/04/28/PAbvjX3dMT7l5FL.png">
+<meta property="og:image" content="https://i.loli.net/2021/04/28/tmLy1V3bolDH4JP.png">
+<meta property="og:image" content="https://i.loli.net/2021/04/28/OhRIjPGVHYZSBMN.png">
+<meta property="og:image" content="https://i.loli.net/2021/04/28/HksJ9fdGEjIvPMh.png">
+<meta property="article:published_time" content="2021-04-28T13:24:13.000Z">
+<meta property="article:modified_time" content="2024-08-28T15:10:57.897Z">
+<meta property="article:author" content="Pawn Huang">
+<meta property="article:tag" content="Redis">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://i.loli.net/2021/04/28/FxWlkwTbHpvcC5J.png">
+
+<link rel="canonical" href="https://pawnhuang.github.io/2021/04/28/%E7%BC%93%E5%AD%98%E4%BD%BF%E7%94%A8%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BF%9D%E8%AF%81%E6%95%B0%E6%8D%AE%E4%B8%80%E8%87%B4%E6%80%A7%E3%80%81%E7%BC%93%E5%AD%98%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>缓存使用：如何保证数据一致性、缓存设计模式 | Fake it till you make it</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Fake it till you make it</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Pawn Huang's Blog</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://pawnhuang.github.io/2021/04/28/%E7%BC%93%E5%AD%98%E4%BD%BF%E7%94%A8%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BF%9D%E8%AF%81%E6%95%B0%E6%8D%AE%E4%B8%80%E8%87%B4%E6%80%A7%E3%80%81%E7%BC%93%E5%AD%98%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/upload/avatar.png">
+      <meta itemprop="name" content="Pawn Huang">
+      <meta itemprop="description" content="一个非典型程序员">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Fake it till you make it">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          缓存使用：如何保证数据一致性、缓存设计模式
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2021-04-28 21:24:13" itemprop="dateCreated datePublished" datetime="2021-04-28T21:24:13+08:00">2021-04-28</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2024-08-28 23:10:57" itemprop="dateModified" datetime="2024-08-28T23:10:57+08:00">2024-08-28</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%8A%80%E6%9C%AF/" itemprop="url" rel="index"><span itemprop="name">技术</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">本文字数：</span>
+              <span>2.3k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">阅读时长 &asymp;</span>
+              <span>2 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>缓存使用在现在的项目中非常常见，缓存在为我们带来便利的同时，也会带来一些常见的问题，如果不谨慎使用，可能会带来意想不到的结果。</p>
+<p>面试中，缓存使用带来的各种问题也是面试官喜欢考察的点，今天我将跟大家一起探讨以下几个常见的问题：</p>
+<blockquote>
+<p>如何保证数据库和缓存的数据一致性？<br> 先操作数据库 or 先操作缓存？<br> 失效缓存 or 更新缓存？<br> 缓存的常见设计模式有哪些？</p>
+</blockquote>
+<span id="more"></span>
+
+<h2 id="正文"><a href="#正文" class="headerlink" title="正文"></a>正文</h2><h3 id="缓存查询通用流程"><a href="#缓存查询通用流程" class="headerlink" title="缓存查询通用流程"></a>缓存查询通用流程</h3><p><img src="https://i.loli.net/2021/04/28/FxWlkwTbHpvcC5J.png" alt="1"></p>
+<p>这个缓存查询流程相信大家都不陌生，这应该是目前应用最广的缓存查询流程。<br>但是大部分人可能不知道，这个流程其实有一个名字：Cache Aside Pattern，这是缓存设计模式的一种。<br>上图是 Cache Aside Pattern 的查询流程，而更新流程如下。<br><img src="https://i.loli.net/2021/04/28/6zPkSiXGuNMoIdQ.png" alt="2"></p>
+<p>这个更新流程会引出两个问题：<br>1）为什么是先操作数据库，可以先操作缓存吗？<br>2）为什么是失效缓存，可以更新缓存吗？<br>接下来我们一一分析。</p>
+<h3 id="先操作数据库-or-先操作缓存"><a href="#先操作数据库-or-先操作缓存" class="headerlink" title="先操作数据库 or 先操作缓存"></a>先操作数据库 or 先操作缓存</h3><p>先操作数据库<br>案例如下，有两个并发的请求，一个写请求，一个读请求，流程如下：<br><img src="https://i.loli.net/2021/04/28/bsT8tD35qxC2QHc.png" alt="3"><br>脏数据时间范围：更新数据库后，失效缓存前。这个时间范围很小，通常不会超过几毫秒。</p>
+<p>先操作缓存<br>案例如下，有两个并发的请求，一个写请求，一个读请求，流程如下：<br><img src="https://i.loli.net/2021/04/28/zSQNUincFBLm6ax.png" alt="4"><br>脏数据时间范围：更新数据库后，下一次对该数据的更新前。这个时间范围不确定性很大，情况如下：<br>1）如果下一次对该数据的更新马上就到来，那么会失效缓存，脏数据的时间就很短。</p>
+<p>2）如果下一次对该数据的更新要很久才到来，那这期间缓存保存的一直是脏数据，时间范围很长。</p>
+<p>结论：通过上述案例可以看出，先操作数据库和先操作缓存都会存在脏数据的情况。但是相比之下，先操作数据库，再操作缓存是更优的方式，即使在并发极端情况下，也只会出现很小量的脏数据。</p>
+<h3 id="失效缓存-or-更新缓存"><a href="#失效缓存-or-更新缓存" class="headerlink" title="失效缓存 or 更新缓存"></a>失效缓存 or 更新缓存</h3><p>更新缓存<br>案例如下，有两个并发的写请求，流程如下：<br><img src="https://i.loli.net/2021/04/28/g6aCTFuixeH3GcD.png" alt="5"><br>分析：数据库中的数据是请求B的，缓存中的数据是请求A的，数据库和缓存存在数据不一致。</p>
+<p>失效缓存<br>案例如下，有两个并发的写请求，流程如下：<br><img src="https://i.loli.net/2021/04/28/5imrc4nexJR9PSh.png" alt="6"><br>分析：由于是删除缓存，所以不存在数据不一致的情况。</p>
+<p>结论：通过上述案例，可以很明显的看出，失效缓存是更优的方式。</p>
+<h3 id="如何保证数据库和缓存的数据一致性"><a href="#如何保证数据库和缓存的数据一致性" class="headerlink" title="如何保证数据库和缓存的数据一致性"></a>如何保证数据库和缓存的数据一致性</h3><p>在上文的案例中，无论是先操作数据库，还是先操作缓存，都会存在脏数据的情况，有办法避免吗？<br>答案是有的，由于数据库和缓存是两个不同的数据源，要保证其数据一致性，其实就是典型的分布式事务场景，可以引入分布式事务来解决，常见的有：2PC、TCC、MQ事务消息等。</p>
+<p>但是引入分布式事务必然会带来性能上的影响，这与我们当初引入缓存来提升性能的目的是相违背的。</p>
+<p>所以在实际使用中，通常不会去保证缓存和数据库的强一致性，而是做出一定的牺牲，保证两者数据的最终一致性。</p>
+<p>如果是实在无法接受脏数据的场景，则比较合理的方式是放弃使用缓存，直接走数据库。</p>
+<p>保证数据库和缓存数据最终一致性的常用方案如下：<br>1）更新数据库，数据库产生 binlog。</p>
+<p>2）监听和消费 binlog，执行失效缓存操作。</p>
+<p>3）如果步骤2失效缓存失败，则引入重试机制，将失败的数据通过MQ方式进行重试，同时考虑是否需要引入幂等机制。<br><img src="https://i.loli.net/2021/04/28/PAbvjX3dMT7l5FL.png" alt="7"><br>兜底：当出现未知的问题时，及时告警通知，人为介入处理。</p>
+<p>人为介入是终极大法，那些外表看着光鲜艳丽的应用，其背后大多有一群苦逼的程序员，在不断的修复各种脏数据和bug。<br>上文我们聊到了缓存设计模式中的 Cache Aside，并对常见的问题进行了延伸。<br>接着，我们来聊下缓存设计模式的其他几种：Read Through、Write Through、Write Behind Caching。</p>
+<h3 id="Read-Write-Through"><a href="#Read-Write-Through" class="headerlink" title="Read/Write Through"></a>Read/Write Through</h3><p>在 Cache Aside 中，应用层需要和两个数据源打交道：缓存、数据库，这增加了 应用层的复杂度，能否只和一个数据源打交道？</p>
+<p>Read/Write Through 就是用来解决这个问题的，该模式下应用层只和缓存打交道，由缓存去操作和维护数据库。</p>
+<p>该模式会让应用层变得更加简单，同时代码也会更简洁。</p>
+<h4 id="Read-Through"><a href="#Read-Through" class="headerlink" title="Read Through"></a>Read Through</h4><p>应用层查询数据时，当缓存未命中时，由缓存去查询数据库，并且将结果写入缓存中，最后返回结果给应用层。<br><img src="https://i.loli.net/2021/04/28/tmLy1V3bolDH4JP.png" alt="8"></p>
+<h4 id="Write-Through"><a href="#Write-Through" class="headerlink" title="Write Through"></a>Write Through</h4><p>应用层更新数据时，由缓存去更新数据库。同时，当缓存命中时，写缓存和写数据库需要同步控制，保证同时成功。<br><img src="https://i.loli.net/2021/04/28/OhRIjPGVHYZSBMN.png" alt="9"></p>
+<h3 id="Write-Behind-Caching"><a href="#Write-Behind-Caching" class="headerlink" title="Write Behind Caching"></a>Write Behind Caching</h3><p>Write Behind 又称为 Write Back，从应用层的视角来看和 Write Through 类似，在该模式下，应用层也是只需要和缓存一个数据源打交道，不同点在于：</p>
+<p>Write Through 会立刻把数据同步写入数据库中，这样做的优点是操作简单，缺点是数据修改需要同时写入数据库，数据写入速度会比较慢。</p>
+<p>Write Behind 会在一段时间之后异步的把数据批量写入数据库，这样的做的优点是：1）应用层操作只写缓存，应用层会觉得操作飞快无比；2）缓存在异步的写入数据库时，会将多个 I/O 操作合并成一个，减少 I/O 次数。</p>
+<p>缺点是：1）复杂度高；2）更新后的数据还未写入数据库时，如果此时出现系统断电的情况，数据将无法找回。</p>
+<p>Write Behind 的核心流程图如下：<br><img src="https://i.loli.net/2021/04/28/HksJ9fdGEjIvPMh.png" alt="10"></p>
+<p>Write Back 缓存模式由于其复杂性比较高，所以在业务应用中使用的比较少，但是由于其带来的性能提升，还是有不少优秀的软件采用了该设计模式，例如：linux 中的页缓存、MySQL 中的 InnoDB 存储引擎。<br>linux 中的 page cache（页缓存）采用的就是 write back 机制：用户 write 时只是将数据写到 page cache，并标记为 dirty，并没有真正写到硬盘上 。内核在某个时刻会将 page cache 里的 dirty 数据 wirteback 到硬盘上。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Redis/" rel="tag"># Redis</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2021/04/26/Redis%EF%BC%9A%E9%AB%98%E5%8F%AF%E7%94%A8%E8%A7%A3%E5%86%B3%E6%96%B9%E6%A1%88%E5%93%A8%E5%85%B5%E3%80%81%E9%9B%86%E7%BE%A4%E2%80%9D/" rel="prev" title="面试必问的Redis：高可用解决方案哨兵、集群">
+      <i class="fa fa-chevron-left"></i> 面试必问的Redis：高可用解决方案哨兵、集群
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2021/04/29/%E7%BC%93%E5%AD%98%E7%A9%BF%E9%80%8F%E3%80%81%E7%BC%93%E5%AD%98%E5%87%BB%E7%A9%BF%E3%80%81%E7%BC%93%E5%AD%98%E9%9B%AA%E5%B4%A9%E8%A7%A3%E5%86%B3%E6%96%B9%E6%A1%88/" rel="next" title="缓存穿透、缓存击穿、缓存雪崩解决方案">
+      缓存穿透、缓存击穿、缓存雪崩解决方案 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%89%8D%E8%A8%80"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%AD%A3%E6%96%87"><span class="nav-number">2.</span> <span class="nav-text">正文</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BC%93%E5%AD%98%E6%9F%A5%E8%AF%A2%E9%80%9A%E7%94%A8%E6%B5%81%E7%A8%8B"><span class="nav-number">2.1.</span> <span class="nav-text">缓存查询通用流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%88%E6%93%8D%E4%BD%9C%E6%95%B0%E6%8D%AE%E5%BA%93-or-%E5%85%88%E6%93%8D%E4%BD%9C%E7%BC%93%E5%AD%98"><span class="nav-number">2.2.</span> <span class="nav-text">先操作数据库 or 先操作缓存</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%B1%E6%95%88%E7%BC%93%E5%AD%98-or-%E6%9B%B4%E6%96%B0%E7%BC%93%E5%AD%98"><span class="nav-number">2.3.</span> <span class="nav-text">失效缓存 or 更新缓存</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A6%82%E4%BD%95%E4%BF%9D%E8%AF%81%E6%95%B0%E6%8D%AE%E5%BA%93%E5%92%8C%E7%BC%93%E5%AD%98%E7%9A%84%E6%95%B0%E6%8D%AE%E4%B8%80%E8%87%B4%E6%80%A7"><span class="nav-number">2.4.</span> <span class="nav-text">如何保证数据库和缓存的数据一致性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Read-Write-Through"><span class="nav-number">2.5.</span> <span class="nav-text">Read&#x2F;Write Through</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Read-Through"><span class="nav-number">2.5.1.</span> <span class="nav-text">Read Through</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Write-Through"><span class="nav-number">2.5.2.</span> <span class="nav-text">Write Through</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Write-Behind-Caching"><span class="nav-number">2.6.</span> <span class="nav-text">Write Behind Caching</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Pawn Huang"
+      src="/upload/avatar.png">
+  <p class="site-author-name" itemprop="name">Pawn Huang</p>
+  <div class="site-description" itemprop="description">一个非典型程序员</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">1</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">8</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Pawn Huang</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+    <span title="站点总字数">152k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">2:18</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://pisces.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Pisces</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

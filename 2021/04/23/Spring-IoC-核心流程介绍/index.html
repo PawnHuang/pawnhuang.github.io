@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.2">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<link rel="stylesheet" href="//fonts.googleapis.com/css?family=Lato:300,300italic,400,400italic,700,700italic|Lobster Two:300,300italic,400,400italic,700,700italic|PT Mono:300,300italic,400,400italic,700,700italic&display=swap&subset=latin,latin-ext">
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"pawnhuang.github.io","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="前言本文将用最通俗易懂的文字介绍 Spring IoC 中的核心流程，主要用于帮助初学者快速了解 IoC 的核心流程，也可以用作之前源码分析文章的总结。本着简单的初衷，本文会省略掉大量流程，只介绍最重要的步骤。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Spring IoC 核心流程介绍">
+<meta property="og:url" content="https://pawnhuang.github.io/2021/04/23/Spring-IoC-%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B%E4%BB%8B%E7%BB%8D/index.html">
+<meta property="og:site_name" content="Fake it till you make it">
+<meta property="og:description" content="前言本文将用最通俗易懂的文字介绍 Spring IoC 中的核心流程，主要用于帮助初学者快速了解 IoC 的核心流程，也可以用作之前源码分析文章的总结。本着简单的初衷，本文会省略掉大量流程，只介绍最重要的步骤。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://i.loli.net/2021/04/23/kA7MUcJ3optqyGZ.png">
+<meta property="og:image" content="https://i.loli.net/2021/04/23/87R5qZS3VawiUY1.png">
+<meta property="article:published_time" content="2021-04-23T14:02:19.000Z">
+<meta property="article:modified_time" content="2024-08-28T15:10:57.897Z">
+<meta property="article:author" content="Pawn Huang">
+<meta property="article:tag" content="Spring-ioc">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://i.loli.net/2021/04/23/kA7MUcJ3optqyGZ.png">
+
+<link rel="canonical" href="https://pawnhuang.github.io/2021/04/23/Spring-IoC-%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B%E4%BB%8B%E7%BB%8D/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Spring IoC 核心流程介绍 | Fake it till you make it</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Fake it till you make it</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Pawn Huang's Blog</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://pawnhuang.github.io/2021/04/23/Spring-IoC-%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B%E4%BB%8B%E7%BB%8D/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/upload/avatar.png">
+      <meta itemprop="name" content="Pawn Huang">
+      <meta itemprop="description" content="一个非典型程序员">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Fake it till you make it">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Spring IoC 核心流程介绍
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2021-04-23 22:02:19" itemprop="dateCreated datePublished" datetime="2021-04-23T22:02:19+08:00">2021-04-23</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2024-08-28 23:10:57" itemprop="dateModified" datetime="2024-08-28T23:10:57+08:00">2024-08-28</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%8A%80%E6%9C%AF/" itemprop="url" rel="index"><span itemprop="name">技术</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">本文字数：</span>
+              <span>7.6k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">阅读时长 &asymp;</span>
+              <span>7 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>本文将用最通俗易懂的文字介绍 Spring IoC 中的核心流程，主要用于帮助初学者快速了解 IoC 的核心流程，也可以用作之前源码分析文章的总结。本着简单的初衷，本文会省略掉大量流程，只介绍最重要的步骤。</p>
+<span id="more"></span>
+
+<h2 id="基础概念"><a href="#基础概念" class="headerlink" title="基础概念"></a>基础概念</h2><h3 id="IoC-和-DI"><a href="#IoC-和-DI" class="headerlink" title="IoC 和 DI"></a>IoC 和 DI</h3><p>IoC （Inversion of Control），即控制反转。这不是一种新的技术，而是 Spring 的一种设计思想。</p>
+<p>在传统的程序设计，我们直接在对象内部通过 new 来创建对象，是程序主动去创建依赖对象；而在 Spring 中有专门的一个容器来创建和管理这些对象，并将对象依赖的其他对象注入到该对象中，这个容器我们一般称为 IoC 容器。</p>
+<p>所有的类的创建、销毁都由 Spring 来控制，也就是说控制对象生存周期的不再是引用它的对象，而是 Spring。对于某个具体的对象而言，以前是它控制其他对象，现在是所有对象都被 Spring 控制，所以这叫控制反转。</p>
+<p>DI（Dependency Injection），即依赖注入，由 Martin Fowler 提出。可以认为 IoC 和 DI 其实是同一个概念的不同角度描述。</p>
+<p>依赖注入是指组件之间的依赖关系由容器在运行期决定，形象的说，即由容器动态的将某个依赖关系注入到组件之中。依赖注入的目的并非为软件系统带来更多功能，而是为了提升组件重用的频率，并为系统搭建一个灵活、可扩展的平台。</p>
+<p>通过依赖注入机制，我们只需要通过简单的配置，而无需任何代码就可指定目标需要的资源，完成自身的业务逻辑，而不需要关心具体的资源来自何处，由谁实现。</p>
+<h3 id="bean"><a href="#bean" class="headerlink" title="bean"></a>bean</h3><p>官方概念：在 Spring 中，构成应用程序主干并由 Spring IoC 容器管理的对象称为 bean。 bean 是一个由 Spring IoC 容器实例化，组装和管理的对象。</p>
+<p>大白话：bean 可以认为是那些我们想注入到 Spring IoC 容器的 Java 对象实例的抽象。</p>
+<p>我们经常会在 Service 上使用 @Service 注解，然后在要使用该 Service 的类中通过 @Autowire 注解来注入，这个 Service 就是一个 bean。在这个地方，@Service 注解相当于告诉 IoC 容器：这个类你需要帮我创建和管理；而 @Autowire 注解相当于告诉 IoC 容器：我需要依赖这个类，你需要帮我注入进来。</p>
+<h3 id="BeanDefinition"><a href="#BeanDefinition" class="headerlink" title="BeanDefinition"></a>BeanDefinition</h3><p>理解了 bean，BeanDefinition 就好理解了。BeanDefinition 是 bean 的定义，用来存储 bean 的所有属性方法定义。</p>
+<h3 id="BeanFactory-和-ApplicationContext"><a href="#BeanFactory-和-ApplicationContext" class="headerlink" title="BeanFactory 和 ApplicationContext"></a>BeanFactory 和 ApplicationContext</h3><p>BeanFactory：基础类型 IoC 容器，提供完整的 IoC 服务支持。</p>
+<p>ApplicationContext：BeanFactory 的子接口，在 BeanFactory 的基础上构建，是相对比较高级的 IoC 容器实现。包含 BeanFactory 的所有功能，还提供了其他高级的特性，比如：事件发布、国际化信息支持、统一资源加载策略等。正常情况下，我们都是使用的 ApplicationContext。</p>
+<p>以电话来举例：</p>
+<p>我们家里使用的 “座机” 就类似于 BeanFactory，可以进行电话通讯，满足了最基本的需求。</p>
+<p>而现在非常普及的智能手机，iPhone、小米等，就类似于 ApplicationContext，除了能进行电话通讯，还有其他很多功能：拍照、地图导航、听歌等。</p>
+<h3 id="FactoryBean"><a href="#FactoryBean" class="headerlink" title="FactoryBean"></a>FactoryBean</h3><p>一般情况下，我们将 bean 的创建和管理都交给 Spring IoC 容器，Spring 会利用 bean 的 class 属性指定的类来实例化 bean。</p>
+<p>但是如果我们想自己实现 bean 的创建操作，可以实现吗？答案是可以的，FactoryBean 就可以实现这个需求。</p>
+<p>FactoryBean 是一种特殊的 bean，它是个工厂 bean，可以自己创建 bean 实例，如果一个类实现了 FactoryBean 接口，则该类可以自己定义创建实例对象的方法，只需要实现它的 getObject() 方法即可。</p>
+<p>FactoryBean 可能对于普通开发来说基本用不到也没去注意过，但是它其实应用的非常广，特别是在中间件中，如果你看过一些中间件的源码，一定会看到 FactoryBean 的身影。</p>
+<p>介绍了几个基础的类后，接下来将介绍 Spring IoC 的核心流程。</p>
+<h2 id="核心流程"><a href="#核心流程" class="headerlink" title="核心流程"></a>核心流程</h2><h3 id="容器构建入口"><a href="#容器构建入口" class="headerlink" title="容器构建入口"></a>容器构建入口</h3><p>容器构建启动的入口有多种多样，这边以常用的 web.xml 配置的方式来说。</p>
+<p>首先，我们会在 web.xml 中配置 ContextLoaderListener 监听器，当 Tomcat 启动时，会触发 ContextLoaderListener 的 contextInitialized 方法，从而开始 IoC 的构建流程。</p>
+<p>另一个常用的参数是 contextConfigLocation，用于指定 Spring 配置文件的路径。</p>
+<h3 id="ApplicationContext-刷新前配置"><a href="#ApplicationContext-刷新前配置" class="headerlink" title="ApplicationContext 刷新前配置"></a>ApplicationContext 刷新前配置</h3><p>在正式进入容器的刷新前，会进行一些前置操作。</p>
+<p>1、确认要使用的容器，通常使用的是：XmlWebApplicationContext，如果是用 Spring Boot，一般是 AnnotationConfigApplicationContext，但其实都差别不大，最终都会继承 AbstractApplicationContext，核心逻辑也都是在 AbstractApplicationContext 中实现。</p>
+<p>2、提供一个给开发者初始化 ApplicationContext 的机会，具体的使用如下。</p>
+<p>例子：ApplicationContextInitializer 扩展使用<br>1）创建一个 ApplicationContextInitializer 接口的实现类，例如下面的 SpringApplicationContextInitializer，并在 initialize 方法中进行自己的逻辑操作，例如：添加监听器、添加 BeanFactoryPostProcessor。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> com.joonwhee.open.spring;</span><br><span class="line"> </span><br><span class="line"><span class="keyword">import</span> com.joonwhee.open.listener.EarlyListener;</span><br><span class="line"><span class="keyword">import</span> com.joonwhee.open.processor.MyBeanFactoryPostProcessor;</span><br><span class="line"><span class="keyword">import</span> org.springframework.context.ApplicationContextInitializer;</span><br><span class="line"><span class="keyword">import</span> org.springframework.context.ConfigurableApplicationContext;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">SpringApplicationContextInitializer</span> <span class="keyword">implements</span></span><br><span class="line">        <span class="title class_">ApplicationContextInitializer</span>&lt;ConfigurableApplicationContext&gt; &#123;</span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">initialize</span><span class="params">(ConfigurableApplicationContext applicationContext)</span> &#123;</span><br><span class="line">        <span class="comment">// 自己的逻辑实现</span></span><br><span class="line"> </span><br><span class="line">        <span class="comment">// 例子1：通过硬编码的方式添加监听器</span></span><br><span class="line">        <span class="type">EarlyListener</span> <span class="variable">earlyListener</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">EarlyListener</span>();</span><br><span class="line">        applicationContext.addApplicationListener(earlyListener);</span><br><span class="line"> </span><br><span class="line">        <span class="comment">// 例子2：通过硬编码的方式添加BeanFactoryPostProcessor</span></span><br><span class="line">        <span class="type">MyBeanFactoryPostProcessor</span> <span class="variable">myBeanFactoryPostProcessor</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">MyBeanFactoryPostProcessor</span>();</span><br><span class="line">        applicationContext.addBeanFactoryPostProcessor(myBeanFactoryPostProcessor);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>2）在web.xml中，定义 contextInitializerClasses 或 globalInitializerClasses 参数，参数值为 SpringApplicationContextInitializer 的全路径。<br><img src="https://i.loli.net/2021/04/23/kA7MUcJ3optqyGZ.png" alt="1"></p>
+<h3 id="初始化-BeanFactory、加载-Bean-定义"><a href="#初始化-BeanFactory、加载-Bean-定义" class="headerlink" title="初始化 BeanFactory、加载 Bean 定义"></a>初始化 BeanFactory、加载 Bean 定义</h3><p>1、创建一个新的 BeanFactory，默认为 DefaultListableBeanFactory。</p>
+<p>2、根据 web.xml 中 contextConfigLocation 配置的路径，读取 Spring 配置文件，并封装成 Resource。</p>
+<p>3、根据 Resource 加载 XML 配置文件，并解析成 Document 对象 。</p>
+<p>4、从根节点开始，遍历解析 Document 中的节点。</p>
+<p>4.1、对于默认命名空间的节点：先将 bean 节点内容解析封装成 BeanDefinition，然后将 beanName、BeanDefinition 放到 BeanFactory 的缓存中，用于后续创建 bean 实例时使用。</p>
+<p>默认命名空间：<a target="_blank" rel="noopener" href="http://www.springframework.org/schema/beans%EF%BC%8C%E5%8F%AF%E8%83%BD%E5%AD%98%E5%9C%A8%E7%9A%84%E8%8A%82%E7%82%B9%E5%A6%82%E4%B8%8B%EF%BC%9A">http://www.springframework.org/schema/beans，可能存在的节点如下：</a><br><img src="https://i.loli.net/2021/04/23/87R5qZS3VawiUY1.png" alt="2"></p>
+<p>4.2、对于自定义命名空间的节点：会拿到自定义命名空间对应的解析器，对节点进行解析处理。</p>
+<p>例如：&lt;context:component-scan base-package=”com.joonwhee” /&gt; ，该节点对应的解析器会扫描 base-package 指定路径下的所有类，将使用了 @Component（@Controller、@Service、@Repository）注解的类封装成 BeanDefinition，然后将 beanName、BeanDefinition 放到 BeanFactory 的缓存中，用于后续创建 Bean 实例时使用。</p>
+<h3 id="触发-BeanFactoryPostProcessor"><a href="#触发-BeanFactoryPostProcessor" class="headerlink" title="触发 BeanFactoryPostProcessor"></a>触发 BeanFactoryPostProcessor</h3><p>实例化和调用所有 BeanFactoryPostProcessor，包括其子类 BeanDefinitionRegistryPostProcessor。</p>
+<p>BeanFactoryPostProcessor 接口是 Spring 初始化 BeanFactory 时对外暴露的扩展点，Spring IoC 容器允许 BeanFactoryPostProcessor 在容器实例化任何 bean 之前读取 bean 的定义，并可以修改它。</p>
+<p>BeanDefinitionRegistryPostProcessor 继承自 BeanFactoryPostProcessor，比 BeanFactoryPostProcessor 具有更高的优先级，主要用来在常规的 BeanFactoryPostProcessor 激活之前注册一些 bean 定义。特别是，你可以通过 BeanDefinitionRegistryPostProcessor 来注册一些常规的 BeanFactoryPostProcessor，因为此时所有常规的 BeanFactoryPostProcessor 都还没开始被处理。 </p>
+<p>注：这边的 “常规 BeanFactoryPostProcessor” 主要用来跟 BeanDefinitionRegistryPostProcessor 区分。</p>
+<p>例子：BeanFactoryPostProcessor 扩展使用</p>
+<p>1）创建一个 BeanFactoryPostProcessor 接口的实现类，例如下面的 MyBeanFactoryPostProcessor，并在 postProcessBeanFactory 方法中进行自己的逻辑操作。例如：扫描某个包路径，将该包路径下使用了某个注解的类全部注册到 Spring 中。</p>
+<p>2）将该实现类注册到 Spring 容器中，例如使用 @Component 注解</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> com.joonwhee.open.demo.spring;</span><br><span class="line"> </span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.BeansException;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.config.BeanFactoryPostProcessor;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.config.ConfigurableListableBeanFactory;</span><br><span class="line"><span class="keyword">import</span> org.springframework.stereotype.Component;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Component</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">MyBeanFactoryPostProcessor</span> <span class="keyword">implements</span> <span class="title class_">BeanFactoryPostProcessor</span> &#123;</span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">postProcessBeanFactory</span><span class="params">(ConfigurableListableBeanFactory beanFactory)</span> <span class="keyword">throws</span> BeansException &#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;MyBeanFactoryPostProcessor#postProcessBeanFactory&quot;</span>);</span><br><span class="line">        <span class="comment">// 自己的逻辑处理</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>另外，Mybatis 中的 MapperScannerConfigurer 是一个典型的 BeanDefinitionRegistryPostProcessor 的扩展使用，有兴趣的可以看看这个类的源码。</p>
+<h3 id="注册-BeanPostProcessor"><a href="#注册-BeanPostProcessor" class="headerlink" title="注册 BeanPostProcessor"></a>注册 BeanPostProcessor</h3><p>注册所有的 BeanPostProcessor，将所有实现了 BeanPostProcessor 接口的类加载到 BeanFactory 中。</p>
+<p>BeanPostProcessor 接口是 Spring 初始化 bean 时对外暴露的扩展点，Spring IoC 容器允许 BeanPostProcessor 在容器初始化 bean 的前后，添加自己的逻辑处理。在这边只是注册到 BeanFactory 中，具体调用是在 bean 初始化的时候。</p>
+<p>例子：BeanPostProcessor 扩展使用</p>
+<p>1）创建一个 BeanPostProcessor 接口的实现类，例如下面的 MyBeanPostProcessor，并在方法中进行自己的逻辑操作。</p>
+<p>2）将该实现类注册到 Spring 容器中，例如使用 @Component 注解。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> com.joonwhee.open.processor;</span><br><span class="line"> </span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.BeansException;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.config.BeanPostProcessor;</span><br><span class="line"><span class="keyword">import</span> org.springframework.stereotype.Component;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Component</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">MyBeanPostProcessor</span> <span class="keyword">implements</span> <span class="title class_">BeanPostProcessor</span> &#123;</span><br><span class="line"> </span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> Object <span class="title function_">postProcessBeforeInitialization</span><span class="params">(Object bean, String beanName)</span> <span class="keyword">throws</span> BeansException &#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;MyBeanPostProcessor#postProcessBeforeInitialization&quot;</span>);</span><br><span class="line">        <span class="comment">// 自己的逻辑</span></span><br><span class="line">        <span class="keyword">return</span> bean;</span><br><span class="line">    &#125;</span><br><span class="line"> </span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> Object <span class="title function_">postProcessAfterInitialization</span><span class="params">(Object bean, String beanName)</span> <span class="keyword">throws</span> BeansException &#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;MyBeanPostProcessor#postProcessAfterInitialization&quot;</span>);</span><br><span class="line">        <span class="comment">// 自己的逻辑</span></span><br><span class="line">        <span class="keyword">return</span> bean;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="实例化所有剩余的非懒加载单例-bean"><a href="#实例化所有剩余的非懒加载单例-bean" class="headerlink" title="实例化所有剩余的非懒加载单例 bean"></a>实例化所有剩余的非懒加载单例 bean</h3><p>1、遍历所有被加载到缓存中的 beanName，触发所有剩余的非懒加载单例 bean 的实例化。</p>
+<p>2、首先通过 beanName 尝试从缓存中获取，如果存在则跳过实例化过程；否则，进行 bean 的实例化。</p>
+<p>3、根据 BeanDefinition，使用构造函数创建 bean 实例。</p>
+<p>4、根据 BeanDefinition，进行 bean 实例属性填充。</p>
+<p>5、执行 bean 实例的初始化。</p>
+<p>5.1、触发 Aware 方法。</p>
+<p>5.2、触发 BeanPostProcessor 的 postProcessBeforeInitialization 方法。</p>
+<p>5.3、如果 bean 实现了 InitializingBean 接口，则触发 afterPropertiesSet() 方法。</p>
+<p>5.4、如果 bean 设置了 init-method 属性，则触发 init-method 指定的方法。</p>
+<p>5.5、触发 BeanPostProcessor 的 postProcessAfterInitialization 方法。</p>
+<p>6、将创建好的 bean 实例放到缓存中，用于之后使用。</p>
+<h3 id="完成上下文的刷新"><a href="#完成上下文的刷新" class="headerlink" title="完成上下文的刷新"></a>完成上下文的刷新</h3><p>使用应用事件广播器推送上下文刷新完毕事件（ContextRefreshedEvent ）到相应的监听器。</p>
+<p>例子：监听器扩展使用</p>
+<p>1）创建一个自定义监听器，实现 ApplicationListener 接口，监听 ContextRefreshedEvent（上下文刷新完毕事件）。</p>
+<p>2）将该监听器注册到 Spring IoC 容器即可。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> org.springframework.context.ApplicationListener;</span><br><span class="line"><span class="keyword">import</span> org.springframework.context.event.ContextRefreshedEvent;</span><br><span class="line"><span class="keyword">import</span> org.springframework.stereotype.Component;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Component</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">MyRefreshedListener</span> <span class="keyword">implements</span> <span class="title class_">ApplicationListener</span>&lt;ContextRefreshedEvent&gt; &#123;</span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">onApplicationEvent</span><span class="params">(ContextRefreshedEvent event)</span> &#123;</span><br><span class="line">        <span class="comment">// 自己的逻辑处理</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>至此，整个 IoC 的核心流程介绍完毕。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>本文只是以简单的介绍了 IoC 中的重要步骤，如果想详细了解 IoC 的完整流程，可以查看之前的源码解析文章。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Spring-ioc/" rel="tag"># Spring-ioc</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2021/04/22/Java%E5%B9%B6%E5%8F%91%EF%BC%9AJava%E5%86%85%E5%AD%98%E6%A8%A1%E5%9E%8B%EF%BC%88JMM%EF%BC%89%E4%B8%8E%E7%BA%BF%E7%A8%8B/" rel="prev" title="Java并发：Java内存模型（JMM）与线程">
+      <i class="fa fa-chevron-left"></i> Java并发：Java内存模型（JMM）与线程
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2021/04/24/%E9%9D%A2%E8%AF%95%E5%BF%85%E9%97%AE%E7%9A%84-Redis%EF%BC%9A%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84%E5%92%8C%E5%9F%BA%E7%A1%80%E6%A6%82%E5%BF%B5/" rel="next" title="面试必问的 Redis：数据结构和基础概念">
+      面试必问的 Redis：数据结构和基础概念 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%89%8D%E8%A8%80"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9F%BA%E7%A1%80%E6%A6%82%E5%BF%B5"><span class="nav-number">2.</span> <span class="nav-text">基础概念</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#IoC-%E5%92%8C-DI"><span class="nav-number">2.1.</span> <span class="nav-text">IoC 和 DI</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#bean"><span class="nav-number">2.2.</span> <span class="nav-text">bean</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#BeanDefinition"><span class="nav-number">2.3.</span> <span class="nav-text">BeanDefinition</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#BeanFactory-%E5%92%8C-ApplicationContext"><span class="nav-number">2.4.</span> <span class="nav-text">BeanFactory 和 ApplicationContext</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#FactoryBean"><span class="nav-number">2.5.</span> <span class="nav-text">FactoryBean</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B"><span class="nav-number">3.</span> <span class="nav-text">核心流程</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%B9%E5%99%A8%E6%9E%84%E5%BB%BA%E5%85%A5%E5%8F%A3"><span class="nav-number">3.1.</span> <span class="nav-text">容器构建入口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ApplicationContext-%E5%88%B7%E6%96%B0%E5%89%8D%E9%85%8D%E7%BD%AE"><span class="nav-number">3.2.</span> <span class="nav-text">ApplicationContext 刷新前配置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%9D%E5%A7%8B%E5%8C%96-BeanFactory%E3%80%81%E5%8A%A0%E8%BD%BD-Bean-%E5%AE%9A%E4%B9%89"><span class="nav-number">3.3.</span> <span class="nav-text">初始化 BeanFactory、加载 Bean 定义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A7%A6%E5%8F%91-BeanFactoryPostProcessor"><span class="nav-number">3.4.</span> <span class="nav-text">触发 BeanFactoryPostProcessor</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B3%A8%E5%86%8C-BeanPostProcessor"><span class="nav-number">3.5.</span> <span class="nav-text">注册 BeanPostProcessor</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%9E%E4%BE%8B%E5%8C%96%E6%89%80%E6%9C%89%E5%89%A9%E4%BD%99%E7%9A%84%E9%9D%9E%E6%87%92%E5%8A%A0%E8%BD%BD%E5%8D%95%E4%BE%8B-bean"><span class="nav-number">3.6.</span> <span class="nav-text">实例化所有剩余的非懒加载单例 bean</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%8C%E6%88%90%E4%B8%8A%E4%B8%8B%E6%96%87%E7%9A%84%E5%88%B7%E6%96%B0"><span class="nav-number">3.7.</span> <span class="nav-text">完成上下文的刷新</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">4.</span> <span class="nav-text">总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Pawn Huang"
+      src="/upload/avatar.png">
+  <p class="site-author-name" itemprop="name">Pawn Huang</p>
+  <div class="site-description" itemprop="description">一个非典型程序员</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">1</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">8</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Pawn Huang</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+    <span title="站点总字数">152k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">2:18</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://pisces.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Pisces</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
