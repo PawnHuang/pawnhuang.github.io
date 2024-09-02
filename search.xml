@@ -2247,4 +2247,315 @@ e2.hash &amp; newCap-1
         <tag>八股文</tag>
       </tags>
   </entry>
+  <entry>
+    <title>一次关于线程池使用场景的讨论</title>
+    <url>/2024/09/03/%E5%A4%9A%E7%BA%BF%E7%A8%8B/%E4%B8%80%E6%AC%A1%E5%85%B3%E4%BA%8E%E7%BA%BF%E7%A8%8B%E6%B1%A0%E4%BD%BF%E7%94%A8%E5%9C%BA%E6%99%AF%E7%9A%84%E8%AE%A8%E8%AE%BA/</url>
+    <content><![CDATA[<p>来一起看看一个关于线程池使用场景上的问题，就当是个场景面试题了。</p>
+<p>问题是这样的：</p>
+<p><img src="https://s2.loli.net/2024/09/02/dMnpSeDbHOiLP1I.png" alt="b3beff3aa3f74eb06ebae610d728070f.png"></p>
+<p>字有点多，我直接给你上个图你就懂了：</p>
+<p><img src="https://s2.loli.net/2024/09/02/UWAodf7I5jFmuzy.png" alt="33f20d1da850cc83adcb43ae64f2d4ee.png"></p>
+<p>前端发起一个生成报表页面的请求，这个页面上的数据由后端多个接口返回，另外由于微服务化了，所以数据散落在每个微服务中，因此需要调用多个下游接口拿到数据进行整合。</p>
+<p>调用多个下游接口的时候，由于接口之间不存在数据依赖，所以可以发起异步调用同时请求不同的下游接口。</p>
+<p>也就是这里有个线程池：</p>
+<p><img src="https://s2.loli.net/2024/09/02/yTDFrMe4pBmhozt.png" alt="8893273b123b0669e64d26328bb90b5a.png"></p>
+<p>这个线程池，核心线程数只有 30 个，最大线程数是 100，队列长度是 1000。一个报表页面的请求发过来，为了整合数据，所以会调用下游 20 多个接口获取数据。</p>
+<p>针对这个情况，用提问者的原话就是：3 个人同时打开，相应速度就会变慢了，因为任务超过空闲的核心线程数，就被放阻塞队列了。理论确实是这个理论。</p>
+<p>该怎么办呢？针对这个场景，大家能想到的一个最直接的一个方案，肯定是扩大核心线程数。</p>
+<p>这个方案，提问者也想到了，同时还进行了进一步思考：</p>
+<p><img src="https://s2.loli.net/2024/09/02/eYiG28lAQR7skwK.png" alt="67eae919aa740e9d1c4ef13a75e8a027.png"></p>
+<p>觉得应该改造一下 Spring 的这个线程池的工作模式，为了让请求尽快的得到处理，可以借鉴 Tomcat 线程池的工作模式。</p>
+<p>Spring 这个线程池的工作模式是先启用核心线程，再启用队列，最后启用非核心线程。Tomcat 线程池的工作模式是先启用核心线程，再启用非核心线程，最后启用队列。</p>
+<p>思路是不错的，但是吧，我觉得在这个场景下，没啥必要。比如 Tomcat 线程池，你的配置是核心线程数 30，非核心线程数 300，队列长度 1000。</p>
+<p>其实你配置 Spring 线程池的时候，核心线程数 300，非核心线程数 300，队列长度 1000，效果和 Tomcat 线程池是一样的。</p>
+<p>唯一的一点区别在非核心线程的回收，但是这一点点内存上的占用，微乎其微，我个人觉得是可以忽略不计的。</p>
+<p>另外，在线程池配置方面，除了调整核心线程数外，还有一个常用的配置是修改线程池的拒绝策略，采用 CallerRunsPolicy，即在线程池满了的情况下，让任务调用者线程执行该任务。</p>
+<p>这个方案在讨论的过程中也有提及到：</p>
+<p><img src="https://s2.loli.net/2024/09/02/XvLhZDYwzgTNfxF.png" alt="f69f2d71aeeeefeb76f320aa1f03a4f9.png"></p>
+<p>那这个方案可以用吗？</p>
+<p>可以，但是需要注意一个暗坑的存在。</p>
+<p>在任务提交线程池之后，Tomcat 的线程有两种情况：</p>
+<ul>
+<li>情况一：请求结束，返给前端，回到 Tomcat 线程池处理新请求。</li>
+<li>情况二：等着下游的返回，然后继续执行。</li>
+</ul>
+<p><img src="https://s2.loli.net/2024/09/02/ksdft35mDRnrHUM.png" alt="cd4cd49ed782b6751321d2abdd176871.png"></p>
+<p>我们先看情况一，你想想，在这个场景下，CallerRun，这个 Runner 是谁？</p>
+<p>是 Tomcat 容器的线程。</p>
+<p>好，现在我们来想象一下这个场景：你有一个自定义线程池，但是由于下游请求中有个慢接口，导致自定义的线程池满了，触发了拒绝策略。</p>
+<p>这个时候拒绝策略是 CallerRunsPolicy。</p>
+<p>于是 Tomcat 线程池里面的一个线程就需要去调用这个慢接口，导致本来在提交任务到线程池之后就返回的 Tomcat 的线程被拿去调用慢接口了，产生了较长时间占用。</p>
+<p>那么会出现一个什么情况？</p>
+<p>就是关键资源被长时间霸占，严重的情况下，服务就对外不可用了。</p>
+<p>你想想，假设 Tomcat 一共就 200 个线程。</p>
+<p>其中 190 个都被你这个慢接口拖着了，只剩下 10 个线程能对外提供服务。</p>
+<p>甚至有可能 200 个都被这个慢接口拖着，而你这个服务，对外肯定不只是这一个接口吧？</p>
+<p>其他接口会因为，慢接口里面的线程池的拒绝策略是 CallerRunsPolicy，把资源全部占用完了，从而受到影响。</p>
+<p>即使你其他功能的一个接口耗时只需要 10ms 也没用，也要去队列里面等着，因为现在没有资源来处理你这个请求。</p>
+<p>而对于接口调用方来说，进入队列等待的时候，也算在接口响应耗时里面。</p>
+<p>所以，在使用 CallerRunsPolicy 拒绝策略的时候，需要特别注意，分析一下是否会占用关键资源，导致拖慢这个服务。</p>
+<p>但是我们这个报表的场景，属于情况二，Tomcat 的线程得等着数据返回。</p>
+<p>等着，本来也是一种占用。所以使用 CallerRunsPolicy 没啥问题。</p>
+<p>但是，Tomcat 线程属于宝贵资源，如果出现长时间占用，那就是一个性能瓶颈点。</p>
+<p>所以，本质上还是不应该有明显的慢接口存在。</p>
+<p>关于“尽快释放宝贵资源”这个点，你也可以看 Dubbo 服务段线程模型，这里相当于是一个最佳实践了</p>
+<blockquote>
+<p><a href="https://cn.dubbo.apache.org/zh-cn/overview/mannual/java-sdk/advanced-features-and-usage/performance/threading-model/provider/">https://cn.dubbo.apache.org/zh-cn/overview/mannual/java-sdk/advanced-features-and-usage/performance/threading-model/provider/</a></p>
+</blockquote>
+<p><img src="https://s2.loli.net/2024/09/02/9SLPvH2KUlDbtx7.png" alt="2a5e654b6f1a51b6e0cb7e9e26b03c3d.png"></p>
+<p>Dubbo 协议 Provider 线程模型的默认配置是 AllDispatcher。</p>
+<p>针对 AllDispatcher 官方给了一个示意图：</p>
+<p><img src="https://s2.loli.net/2024/09/02/WqsMADG6gzEPmiI.png" alt="c0c135e8dc0fe9b58f5226c1b2e044e5.png"></p>
+<p>图中有 IO thread pool 和 Dubbo thread pool 这两个线程池。</p>
+<p>为什么要搞两个线程池呢？</p>
+<p>因为 IO 线程是非常宝贵的资源，它只是应该承担发送请求、发送响应的功能。</p>
+<p>搞个 Dubbo 线程池的目的就是为了尽快释放宝贵的 IO 线程资源。</p>
+<p>比如 received、connected、disconnected、caught 这些行为都是在 Dubbo 线程上执行的，反序列化的动作也是在 Dubbo 的线程池中做的。</p>
+<p>类比到我们前面的例子中，IO 线程池就是 Tomcat 线程池，Dubbo 线程池就是我们项目中的自定义线程池。</p>
+<p>模式，就是这个模式。</p>
+<p>道理，就是这个道理。</p>
+<h2 id="继续挖"><a href="#继续挖" class="headerlink" title="继续挖"></a>继续挖</h2><p>如果这真的是一个面试场景题，增加核心线程数和 CallerRunsPolicy 这个方案，面试官肯定是不会满意的，你还得继续往下挖掘。</p>
+<p>比如，为什么下游返回的那么慢？</p>
+<p>是不是接口上有可以优化的空间？</p>
+<p>是不是有慢 SQL？</p>
+<p>是不是多返回了不需要的信息？</p>
+<p>是不是有不合理的数据结构？</p>
+<p>是不是在接口里面干了一些其他的事情？</p>
+<p>是不是下游的下游拉胯了？</p>
+<p>…</p>
+<p>不要老是从自己身上找原因，也合理指出其他人的问题，对吧？</p>
+<p>总之，20 多个异步接口，一定是有相对较慢的那个。</p>
+<p>它，就是那块短板，找到它，然后定向分析它。</p>
+<p>如果下游说实在是没有优化空间了，那就加点钱嘛，多搞几台机器，横向扩展一下，花不了几个钱的。</p>
+<p>这种情况在实际工作中还真的挺常见的，歪师傅就遇到过。</p>
+<p>上游服务有 8 台机器，我只有 4 台机器，上游并发量一起来，就说我接口响应慢了。</p>
+<p>机器都差了一倍，请求来得又太多，都堆起来了，那可不得慢嘛。</p>
+<p>当然了，把锅甩给下游，下游不一定会接，问题还是得靠自己解决。</p>
+<p>通过前面的分析，我们知道了可以调大核心线程数，但是面试官直接追问一句，调到多少合适呢？</p>
+<p>合适，就是一个很微妙的词了。</p>
+<p>一般我们用“动态调整”来应对这个问题。</p>
+<p>但是在这个“报表”的场景下，歪师傅觉得还真的可以调到一个合适的值，甚至可以用“精准”来形容这个值。</p>
+<p>怎么做呢？</p>
+<p>上个图：</p>
+<p><img src="https://s2.loli.net/2024/09/02/M9TItnQPcilABCm.png" alt="dca9bb25c3151750f06e4404c5e83c61.png"></p>
+<p>在每个接口里面搞个线程池，这个线程池的生命周期和一次请求绑定。</p>
+<p>即一次请求结束，这个线程池就 shutdown 掉。</p>
+<p>你一个接口背后需要调用下游的多少个异步接口，你在写的时候是知道的。</p>
+<p>假设是 15 个，那么你在这个请求里面搞个核心线程数是 15 个的线程池。</p>
+<p>我就问你，精不精准？</p>
+<p>这种用法，就比较适用于这个较为特殊的场景。</p>
+<p>特殊点就在于，需要对数据进行聚合处理，所以需要异步调用多个下游服务，要拿到下游服务的数据返回之后，才能返回给调用方。</p>
+<p>但是这里上游服务发起调用具有不确定性，可能是同时来 10 个请求，也可能是同时来 1000 个请求。</p>
+<p>这种情况导致怎么去合理的定义一个全局的线程池，是一个令人头疼的问题。</p>
+<p>所以，换个思路。</p>
+<p>在不确定性中寻找确定性。</p>
+<p>不确定性是不知道有多少个请求会过来。确定性是每个前端过来的请求，都会对应固定数量的下游接口。</p>
+<p>那就不要用全局的线程池了，给每个请求都单独搞个线程池，及时创建，及时回收。</p>
+<p>当然，这个方案的弊端之一在于不存在线程池的复用了，只是为了单纯的异步。</p>
+<p>弊端之二就是有可能瞬间产生大量的线程，对内存造成一定的压力，但是理论上这些线程都会被很快的回收，所有这点压力应该是在可以接受的范围内。</p>
+<p>但是你想想，你调大核心线程数的根本目的是为了给每个异步任务都分配一个线程。</p>
+<p>我上面的这个方案能达到一样的目的，而且，控制更加精准。</p>
+<h2 id="接着挖"><a href="#接着挖" class="headerlink" title="接着挖"></a>接着挖</h2><p>其实你有没有发现前面说的调整核心数、一个请求对应一个线程池这些方案都很别扭，感觉都不得劲儿？</p>
+<p>是的，我就是有这样的感觉。</p>
+<p>所以，我再看看问题：</p>
+<p><img src="https://s2.loli.net/2024/09/02/dMnpSeDbHOiLP1I.png" alt="b3beff3aa3f74eb06ebae610d728070f.png"></p>
+<p>“类似于报表的系统”。</p>
+<p>如果我是刚刚工作三年的时候，我可能会在接到这个需求之后就去思考技术方案。</p>
+<p>但是现在随着工作年限的增加，我会带着“质疑”的眼光去看待需求，去判断是否是一个“伪需求”。</p>
+<p>在需求和技术落地之间找到一个平衡点，让业务和开发都舒服一点。</p>
+<p>比如既然是报表为什么要求要实时响应呢？</p>
+<p>前端发起请求，后端收到请求之后先返回前端，给个提示：哥们，收到你的请求了，生成报表需要点时间，请十分钟后到 xx 菜单下访问。</p>
+<p>然后你后台慢慢处理，其实五分钟就生成好了，然后你给哥们发个短信提醒：数据已就位。</p>
+<p>别人还会觉得：可以啊，挺快的，科技的哥们真厉害。</p>
+<p>再说了，报表一般来说不都是 T-1 日的数据展示吗？</p>
+<p>既然是 T-1 日的数据，那为什么不在凌晨做个定时任务，先主动把各个系统前一日的数据聚合一下，在本地放一份呢？</p>
+<p>这样就不用在前端调用的时候，实时去调用接口聚合了嘛。查本地数据，那不是很快的事情，性能一下就上去了。</p>
+<p>或者再往前想一步：为什么你要去调用别的系统的接口去获取数据呢？</p>
+<p>因为你自己系统没有数据。</p>
+<p>为什么你自己系统没有数据呢？</p>
+<p>因为你们是微服务架构，数据散落在各个微服务系统里面。</p>
+<p>那在拆分微服务的时候，有没有考虑过各种各样的报表需求？</p>
+<p>如果考虑过，是不是就应该建设一个大数据平台，由大数据平台将各个微服务系统的业务数据抽走，然后整合数据，基于这些数据出各种各样的报表。</p>
+<p>而微服务系统，只需要关注业务就好了。</p>
+<p>如果你们没有大数据平台，你应该给领导充分阐述该平台在当下的必要性，以及未来的重要性。</p>
+<p>然后，这个功能就不需要你来做了。</p>
+]]></content>
+      <categories>
+        <category>多线程</category>
+      </categories>
+      <tags>
+        <tag>多线程</tag>
+        <tag>八股文</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>线程池遇到父子任务，有大坑，要注意（草稿）</title>
+    <url>/2024/09/03/%E5%A4%9A%E7%BA%BF%E7%A8%8B/%E7%BA%BF%E7%A8%8B%E6%B1%A0%E9%81%87%E5%88%B0%E7%88%B6%E5%AD%90%E4%BB%BB%E5%8A%A1%EF%BC%8C%E6%9C%89%E5%A4%A7%E5%9D%91%EF%BC%8C%E8%A6%81%E6%B3%A8%E6%84%8F/</url>
+    <content><![CDATA[<p>最近在使用线程池的时候踩了一个坑，给你分享一下。</p>
+<p>在实际业务场景下，涉及到业务代码和不同的微服务，导致问题有点难以定位，但是最终分析出原因之后，发现可以用一个很简单的例子来演示。</p>
+<p>所以歪师傅这次先用 Demo 说问题，再说场景，方便吸收。</p>
+<p><img src="en-resource://database/708:0" alt="cdfcb8560ec948d0fbb2bf3e8952eba3.png"></p>
+<h2 id="Demo"><a href="#Demo" class="headerlink" title="Demo"></a>Demo</h2><p>老规矩，还是先上个代码：</p>
+<p><img src="en-resource://database/710:0" alt="02a091c12e7ce28a5eb76ba68f61989c.png"></p>
+<p>这个代码的逻辑非常简单，首先我们搞了一个线程池，然后起一个 for 循环往线程池里面仍了 5 个任务，这是核心逻辑。</p>
+<p>对于这几个任务，我们的这个自定义线程池处理起来，不能说得心应手吧，至少也是手拿把掐。</p>
+<p>其他的 StopWatch 是为了统计运行时间用的。 至于 CountDownLatch，你可以理解为在业务流程中，需要这五个任务都执行完成之后才能往下走，所以我搞了一个 CountDownLatch。</p>
+<p>这个代码运行起来是没有任何问题的，我们在日志中搜索“执行完成”，也能搜到 5 个，这个结果也能证明程序是正常结束的：</p>
+<p><img src="en-resource://database/712:0" alt="2ffa8083c59e7c0739c1237c1b76be4e.png"></p>
+<p>同时，可以看到运行时间是 4s。</p>
+<p>示意图大概是这样的：</p>
+<p><img src="en-resource://database/714:0" alt="977faa950e1395f5d8f7729ad98f609d.png"></p>
+<p>然后看着这个代码，发现了一个可以优化的地方：</p>
+<p><img src="en-resource://database/716:0" alt="3dd5fe8d407764879750658ea43a5977.png"></p>
+<p>这个地方从数据库捞出来的数据，它们之间是没有依赖关系的，也就是说它们之间也是可以并行执行的。</p>
+<p>所以把代码改成了这样：</p>
+<p><img src="en-resource://database/718:0" alt="b7bd836031f27b08ac01ccd94201d9e5.png"></p>
+<p>在异步线程里面去处理这部分从数据库中捞出来的数据，并行处理加快响应速度。</p>
+<p>对应到图片，大概就是这个意思：</p>
+<p><img src="en-resource://database/720:0" alt="7bb84a7512e8a85e1ba8e99065e5e03e.png"></p>
+<p>把程序运行起来之后，日志变成了这样：</p>
+<p><img src="en-resource://database/722:0" alt="0966c9d15bfdfed9d0e0d897812f3d53.png"></p>
+<p>我们搜索“执行完成”，也能搜到 5 个对应输出。</p>
+<p>而且我们就拿“任务2”来说：</p>
+<p><img src="en-resource://database/724:0" alt="3f43ab28a81aa96449dde4cbb9e9ac21.png"></p>
+<figure class="highlight subunit"><table><tr><td class="code"><pre><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】开始执行--- </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】执行完成--- </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-1</span>,【任务2】开始处理数据=1 </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-2</span>,【任务2】开始处理数据=2</span><br></pre></td></tr></table></figure>
+
+
+<p>从日志输出来看，任务 2 需要处理的两个数据，确实是在不同的异步线程中处理数据，也实现了我的需求。</p>
+<p>但是，程序运行直接就是到了 9.9ms：</p>
+<p><img src="en-resource://database/726:0" alt="0e61da6218b726133ab1c40b7d4b384b.png"></p>
+<p>这个优化这么牛逼的吗？</p>
+<p>从 4s 到了 9.9ms？</p>
+<p>稍加分析，你会发现这里面是有问题的。</p>
+<p>那么问题就来了，到底是啥问题呢？</p>
+<p>问题就是由于转异步了，所以 for 循环里面的任务中的 countDownLatch 很快就减到 0 了。</p>
+<p>于是 await 继续执行，所以很快就输出了程序运行时间。</p>
+<p>然而实际上子任务还在继续执行，程序并没有真正完成。</p>
+<p>9.9ms 只是任务提交到线程池的时间，每个任务的数据处理时间还没算呢：</p>
+<p><img src="en-resource://database/728:0" alt="e982e80631c5ee58ecefe5f26adf5f02.png"></p>
+<p>从日志输出上也可以看出，在输出了 StopWatch 的日志后，各个任务还在处理数据。</p>
+<p>这样时间就显得不够真实。</p>
+<p>那么我们应该怎么办呢？</p>
+<p>很简单嘛，需要子任务真正执行完成后，父任务的 countDownLatch 才能进行 countDown 的动作。</p>
+<p>具体实现上就是给子任务再加一个 countDownLatch 栅栏：</p>
+<p><img src="en-resource://database/730:0" alt="3f80049115376aff07bf5d2483e9c317.png"></p>
+<p>我们希望的运行结果应该是这样的：</p>
+<figure class="highlight subunit"><table><tr><td class="code"><pre><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】开始执行--- </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-1</span>,【任务2】开始处理数据=1 </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-2</span>,【任务2】开始处理数据=2 </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】执行完成---</span><br></pre></td></tr></table></figure>
+
+
+<p>即子任务全部完成之后，父任务才能算执行完成，这样统计出来的时间才是准确的。</p>
+<p>思路清晰，非常完美，再次运行，观察日志我们会发现：</p>
+<p><img src="en-resource://database/732:0" alt="ea23ee882a713f1bbefa751215ae9129.png"></p>
+<p>呃，怎么回事，日志怎么不输出了？</p>
+<p>是的，就是不输出了。</p>
+<p>不输出了，就是踩到这个坑了。</p>
+<p>不论你重启多少次，都是这样：日志不输出了，程序就像是卡着了一样。</p>
+<p><img src="en-resource://database/734:0" alt="67097d515491de337e94c6c03495a263.png"></p>
+<h2 id="坑在哪儿"><a href="#坑在哪儿" class="headerlink" title="坑在哪儿"></a>坑在哪儿</h2><p>上面这个 Demo 已经是我基于遇到的生产问题，极力简化后的版本了。</p>
+<p>现在，这个坑也已经呈现在你眼前了。</p>
+<p>我们一起来分析一波。</p>
+<p>首先，我问你：真的在线上遇到这种程序“假死”的问题，你会怎么办？</p>
+<p>早几年，歪师傅的习惯是抱着代码慢慢啃，试图从代码中找到端倪。</p>
+<p>这样确实是可以，但是通常来说效率不高。</p>
+<p>现在我的习惯是直接把现场 dump 下来，分析现场。</p>
+<p>比如在这个场景下，我们直观上的感受是“卡住了”，那就 dump 一把线程，管它有枣没枣，打一杆子再说：</p>
+<p><img src="en-resource://database/736:0" alt="dbf92c064da303261fc263ba466d74cf.png"></p>
+<p>通过 Dump 文件，可以发现线程池的线程都在 MainTest 的第 30 行上 parking ，处于等待状态：</p>
+<p><img src="en-resource://database/738:0" alt="33a7c22a3d889488db9033f6166a7b16.png"></p>
+<p>那么第 30 行是啥玩意？</p>
+<p><img src="en-resource://database/740:0" alt="70b146422b8b59b0968132b017f66e18.png"></p>
+<p>这行代码在干啥？</p>
+<blockquote>
+<p>countDownLatchSub.await();</p>
+</blockquote>
+<p>是父任务在等待子任务执行结束，运行 finally 代码，把 countDownLatchSub 的计数 countDown 到 0，才会继续执行：</p>
+<p><img src="en-resource://database/742:0" alt="80c679842aebbf34d460772fb83725b9.png"></p>
+<p>所以现在的现象就是子任务的 countDownLatchSub 把父任务的拦住了。</p>
+<p>换句话说就是父任务被拦住是因为子任务的 finally 代码中的 countDownLatchSub.countDown() 方法没有被执行。</p>
+<p>好，那么最关键的问题就来了：为什么没有执行？</p>
+<p>你先别往下看，闭上眼睛在你的小脑瓜子里面推演一下，琢磨一下：finally 为什么没有执行？</p>
+<p><img src="en-resource://database/744:0" alt="d7ef083a6300f875f100b1d7da30b6ad.png"></p>
+<p>或者再换个更加接近真实的问题：子任务为什么没有执行？</p>
+<p>这个点，非常简单，可以说一点就破。</p>
+<p>琢磨明白了，这个坑的原理摸摸清楚了。</p>
+<p>…</p>
+<p>…</p>
+<p>…</p>
+<p>琢磨明白了吗？你就刷刷往下看？</p>
+<p><img src="en-resource://database/746:0" alt="8d6a12da7c8c6403ec9e19cb3fda33dd.png"></p>
+<p>没明白我再给你一个信息：需要结合线程池的参数和运行原理来分析。</p>
+<p>什么？</p>
+<p>你说线程池的运行原理你不清楚？</p>
+<p>请你出门右转好嘛。</p>
+<p>…</p>
+<p>…</p>
+<p>…</p>
+<p>好，不管你“恍然大悟”了没有。</p>
+<p>让你知道“一点就破”这四个是怎么回事儿。</p>
+<p>首先，我们把目光聚焦在线程池这里：</p>
+<p><img src="en-resource://database/748:0" alt="071ef3a06e1a425f9883ddf1522aa58c.png"></p>
+<p>这个线程池核心线程数是 3，但是我们要提交 5 个任务到线程池去。</p>
+<p>父任务哐哐哐，就把核心线程数占满了。</p>
+<p>接下来子任务也要往这个线程池提交任务怎么办？</p>
+<p>当然是进队列等着了。</p>
+<p>一进队列，就完犊子。</p>
+<p>到这里，我觉得你应该能想明白问题了。</p>
+<p>应该给到我一个恍然大悟的表情，并配上“哦哦哦~”这样的内心 OS。</p>
+<p><img src="en-resource://database/750:0" alt="547761cceb36e0ee84c7f280cd01dc45.png"></p>
+<p><strong>你想想，父任务这个时候干啥？</strong></p>
+<p>是不是等在 countDownLatchSub.await() 这里。</p>
+<p>而 countDownLatchSub.await() 什么时候能继续执行？</p>
+<p>是不是要所有子任务都执行 finally 后？</p>
+<p>那么子任务现在在干啥？</p>
+<p>是不是都在线程池里面的队列等着被执行呢？</p>
+<p>那线程池队列里面的任务什么时候才执行？</p>
+<p>是不是等着有空闲线程的时候？</p>
+<p>那现在有没有空闲线程？</p>
+<p>没有，所有的线程都去执行父任务去了。</p>
+<p><strong>那你想想，父任务这个时候干啥？</strong></p>
+<p>是不是等在 countDownLatchSub.await() 这里。</p>
+<p>…</p>
+<p>父任务在等子任务执行。</p>
+<p>子任务在等线程池调度。</p>
+<p>线程池在等父任务释放线程。</p>
+<p>闭环了，相互等待了，家人们。</p>
+<p>这，就是坑。</p>
+<p>现在把坑的原理摸清楚了，我在给你说一下真实的线上场景踩到这个坑是怎么样的呢？</p>
+<p><img src="en-resource://database/752:0" alt="729ba8d23d1540c36531f680ff4ee960.png"></p>
+<p>上游发起请求到微服务 A 的接口 1，该接口需要调用微服务 B 的接口 2。</p>
+<p>但是微服务 B 的接口 2，需要从微服务 A 接口 3 获取数据。</p>
+<p>然而在微服务 A 内部，全局使用的是同一个自定义线程池。</p>
+<p>更巧的是接口 1 和接口 3 内部都使用了这个自定义线程池做异步并行处理，想着是加快响应速度。</p>
+<p>整个情况就变成了这样：</p>
+<p>接口 1 收到请求之后，把请求转到自定义线程池中，然后等接口 2 返回。<br>接口 2 调用接口 3，并等待返回。<br>接口 3 里面把请求转到了自定义线程池中，被放入了队列。<br>线程池的线程都被接口 1 给占住了，没有资源去执行队列里面的接口 3 任务。<br>相互等待，一直僵持。<br>我们的 Demo 还是能比较清晰的看到父子任务之间的关系。</p>
+<p>但是在这个微服务的场景下，在无形之间，就形成了不易察觉的父子任务关系。</p>
+<p>所以就踩到了这个坑。</p>
+<h2 id="怎么避免"><a href="#怎么避免" class="headerlink" title="怎么避免"></a>怎么避免</h2><p>找到了坑的原因，解决方案就随之而出了。</p>
+<p>父子任务不要共用一个线程池，给子任务也搞一个自定义线程池就可以了：</p>
+<p><img src="en-resource://database/754:0" alt="7c159cd6f108dc89e1007c2b1e1bb392.png"></p>
+<p>运行起来看看日志：</p>
+<p><img src="en-resource://database/756:0" alt="1e294ad02633583a8d3a906351f9eafd.png"></p>
+<p>首先整体运行时间只需要 2s 了，达到了我想要的效果。</p>
+<p>另外，我们观察一个具体的任务：</p>
+<figure class="highlight subunit"><table><tr><td class="code"><pre><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】开始执行--- </span><br><span class="line">当前线程pool<span class="string">-2</span>-thread<span class="string">-1</span>,【任务2】开始处理数据=1 </span><br><span class="line">当前线程pool<span class="string">-2</span>-thread<span class="string">-4</span>,【任务2】开始处理数据=2 </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】执行完成---</span><br></pre></td></tr></table></figure>
+
+<p>日志输出符合我们前面分析的，所有子任务执行完成后，父任务才打印执行完成，且子任务在不同的线程中执行。</p>
+<p>而使用不同的线程池，换一个高大上的说法就叫做：线程池隔离。</p>
+<p>而且在一个项目中，公用一个线程池，也是一个埋坑的逻辑。</p>
+<p>至少给你觉得关键的逻辑，单独分配一个线程池吧。</p>
+<p>避免出现线程池的线程都在执行非核心逻辑了，反而重要的任务在队列里面排队去了。</p>
+<p>这就有点不合理了。</p>
+<p>最后，一句话总结这个问题：</p>
+<blockquote>
+<p>如果线程池的任务之间存在父子关系，那么请不要使用同一个线程池。如果使用了同一个线程池，可能会因为子任务进了队列，导致父任务一直等待，出现假死现象。</p>
+</blockquote>
+]]></content>
+      <categories>
+        <category>多线程</category>
+      </categories>
+      <tags>
+        <tag>多线程</tag>
+        <tag>八股文</tag>
+      </tags>
+  </entry>
 </search>

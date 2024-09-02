@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.2">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<link rel="stylesheet" href="//fonts.googleapis.com/css?family=Lato:300,300italic,400,400italic,700,700italic|Lobster Two:300,300italic,400,400italic,700,700italic|PT Mono:300,300italic,400,400italic,700,700italic&display=swap&subset=latin,latin-ext">
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"pawnhuang.github.io","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="来一起看看一个关于线程池使用场景上的问题，就当是个场景面试题了。 问题是这样的：  字有点多，我直接给你上个图你就懂了：">
+<meta property="og:type" content="article">
+<meta property="og:title" content="一次关于线程池使用场景的讨论">
+<meta property="og:url" content="https://pawnhuang.github.io/2024/09/03/%E5%A4%9A%E7%BA%BF%E7%A8%8B/%E4%B8%80%E6%AC%A1%E5%85%B3%E4%BA%8E%E7%BA%BF%E7%A8%8B%E6%B1%A0%E4%BD%BF%E7%94%A8%E5%9C%BA%E6%99%AF%E7%9A%84%E8%AE%A8%E8%AE%BA/index.html">
+<meta property="og:site_name" content="Fake it till you make it">
+<meta property="og:description" content="来一起看看一个关于线程池使用场景上的问题，就当是个场景面试题了。 问题是这样的：  字有点多，我直接给你上个图你就懂了：">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://s2.loli.net/2024/09/02/dMnpSeDbHOiLP1I.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/02/UWAodf7I5jFmuzy.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/02/yTDFrMe4pBmhozt.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/02/eYiG28lAQR7skwK.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/02/XvLhZDYwzgTNfxF.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/02/ksdft35mDRnrHUM.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/02/9SLPvH2KUlDbtx7.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/02/WqsMADG6gzEPmiI.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/02/M9TItnQPcilABCm.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/02/dMnpSeDbHOiLP1I.png">
+<meta property="article:published_time" content="2024-09-02T17:31:19.000Z">
+<meta property="article:modified_time" content="2024-09-02T17:16:41.040Z">
+<meta property="article:author" content="Pawn Huang">
+<meta property="article:tag" content="多线程">
+<meta property="article:tag" content="八股文">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://s2.loli.net/2024/09/02/dMnpSeDbHOiLP1I.png">
+
+<link rel="canonical" href="https://pawnhuang.github.io/2024/09/03/%E5%A4%9A%E7%BA%BF%E7%A8%8B/%E4%B8%80%E6%AC%A1%E5%85%B3%E4%BA%8E%E7%BA%BF%E7%A8%8B%E6%B1%A0%E4%BD%BF%E7%94%A8%E5%9C%BA%E6%99%AF%E7%9A%84%E8%AE%A8%E8%AE%BA/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>一次关于线程池使用场景的讨论 | Fake it till you make it</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Fake it till you make it</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Pawn Huang's Blog</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://pawnhuang.github.io/2024/09/03/%E5%A4%9A%E7%BA%BF%E7%A8%8B/%E4%B8%80%E6%AC%A1%E5%85%B3%E4%BA%8E%E7%BA%BF%E7%A8%8B%E6%B1%A0%E4%BD%BF%E7%94%A8%E5%9C%BA%E6%99%AF%E7%9A%84%E8%AE%A8%E8%AE%BA/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/upload/avatar.png">
+      <meta itemprop="name" content="Pawn Huang">
+      <meta itemprop="description" content="一个非典型程序员">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Fake it till you make it">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          一次关于线程池使用场景的讨论
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+              
+
+              <time title="创建时间：2024-09-03 01:31:19 / 修改时间：01:16:41" itemprop="dateCreated datePublished" datetime="2024-09-03T01:31:19+08:00">2024-09-03</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E5%A4%9A%E7%BA%BF%E7%A8%8B/" itemprop="url" rel="index"><span itemprop="name">多线程</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">本文字数：</span>
+              <span>3.9k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">阅读时长 &asymp;</span>
+              <span>4 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>来一起看看一个关于线程池使用场景上的问题，就当是个场景面试题了。</p>
+<p>问题是这样的：</p>
+<p><img src="https://s2.loli.net/2024/09/02/dMnpSeDbHOiLP1I.png" alt="b3beff3aa3f74eb06ebae610d728070f.png"></p>
+<p>字有点多，我直接给你上个图你就懂了：</p>
+<p><img src="https://s2.loli.net/2024/09/02/UWAodf7I5jFmuzy.png" alt="33f20d1da850cc83adcb43ae64f2d4ee.png"></p>
+<p>前端发起一个生成报表页面的请求，这个页面上的数据由后端多个接口返回，另外由于微服务化了，所以数据散落在每个微服务中，因此需要调用多个下游接口拿到数据进行整合。</p>
+<p>调用多个下游接口的时候，由于接口之间不存在数据依赖，所以可以发起异步调用同时请求不同的下游接口。</p>
+<p>也就是这里有个线程池：</p>
+<p><img src="https://s2.loli.net/2024/09/02/yTDFrMe4pBmhozt.png" alt="8893273b123b0669e64d26328bb90b5a.png"></p>
+<p>这个线程池，核心线程数只有 30 个，最大线程数是 100，队列长度是 1000。一个报表页面的请求发过来，为了整合数据，所以会调用下游 20 多个接口获取数据。</p>
+<p>针对这个情况，用提问者的原话就是：3 个人同时打开，相应速度就会变慢了，因为任务超过空闲的核心线程数，就被放阻塞队列了。理论确实是这个理论。</p>
+<p>该怎么办呢？针对这个场景，大家能想到的一个最直接的一个方案，肯定是扩大核心线程数。</p>
+<p>这个方案，提问者也想到了，同时还进行了进一步思考：</p>
+<p><img src="https://s2.loli.net/2024/09/02/eYiG28lAQR7skwK.png" alt="67eae919aa740e9d1c4ef13a75e8a027.png"></p>
+<p>觉得应该改造一下 Spring 的这个线程池的工作模式，为了让请求尽快的得到处理，可以借鉴 Tomcat 线程池的工作模式。</p>
+<p>Spring 这个线程池的工作模式是先启用核心线程，再启用队列，最后启用非核心线程。Tomcat 线程池的工作模式是先启用核心线程，再启用非核心线程，最后启用队列。</p>
+<p>思路是不错的，但是吧，我觉得在这个场景下，没啥必要。比如 Tomcat 线程池，你的配置是核心线程数 30，非核心线程数 300，队列长度 1000。</p>
+<p>其实你配置 Spring 线程池的时候，核心线程数 300，非核心线程数 300，队列长度 1000，效果和 Tomcat 线程池是一样的。</p>
+<p>唯一的一点区别在非核心线程的回收，但是这一点点内存上的占用，微乎其微，我个人觉得是可以忽略不计的。</p>
+<p>另外，在线程池配置方面，除了调整核心线程数外，还有一个常用的配置是修改线程池的拒绝策略，采用 CallerRunsPolicy，即在线程池满了的情况下，让任务调用者线程执行该任务。</p>
+<p>这个方案在讨论的过程中也有提及到：</p>
+<p><img src="https://s2.loli.net/2024/09/02/XvLhZDYwzgTNfxF.png" alt="f69f2d71aeeeefeb76f320aa1f03a4f9.png"></p>
+<p>那这个方案可以用吗？</p>
+<p>可以，但是需要注意一个暗坑的存在。</p>
+<p>在任务提交线程池之后，Tomcat 的线程有两种情况：</p>
+<ul>
+<li>情况一：请求结束，返给前端，回到 Tomcat 线程池处理新请求。</li>
+<li>情况二：等着下游的返回，然后继续执行。</li>
+</ul>
+<p><img src="https://s2.loli.net/2024/09/02/ksdft35mDRnrHUM.png" alt="cd4cd49ed782b6751321d2abdd176871.png"></p>
+<p>我们先看情况一，你想想，在这个场景下，CallerRun，这个 Runner 是谁？</p>
+<p>是 Tomcat 容器的线程。</p>
+<p>好，现在我们来想象一下这个场景：你有一个自定义线程池，但是由于下游请求中有个慢接口，导致自定义的线程池满了，触发了拒绝策略。</p>
+<p>这个时候拒绝策略是 CallerRunsPolicy。</p>
+<p>于是 Tomcat 线程池里面的一个线程就需要去调用这个慢接口，导致本来在提交任务到线程池之后就返回的 Tomcat 的线程被拿去调用慢接口了，产生了较长时间占用。</p>
+<p>那么会出现一个什么情况？</p>
+<p>就是关键资源被长时间霸占，严重的情况下，服务就对外不可用了。</p>
+<p>你想想，假设 Tomcat 一共就 200 个线程。</p>
+<p>其中 190 个都被你这个慢接口拖着了，只剩下 10 个线程能对外提供服务。</p>
+<p>甚至有可能 200 个都被这个慢接口拖着，而你这个服务，对外肯定不只是这一个接口吧？</p>
+<p>其他接口会因为，慢接口里面的线程池的拒绝策略是 CallerRunsPolicy，把资源全部占用完了，从而受到影响。</p>
+<p>即使你其他功能的一个接口耗时只需要 10ms 也没用，也要去队列里面等着，因为现在没有资源来处理你这个请求。</p>
+<p>而对于接口调用方来说，进入队列等待的时候，也算在接口响应耗时里面。</p>
+<p>所以，在使用 CallerRunsPolicy 拒绝策略的时候，需要特别注意，分析一下是否会占用关键资源，导致拖慢这个服务。</p>
+<p>但是我们这个报表的场景，属于情况二，Tomcat 的线程得等着数据返回。</p>
+<p>等着，本来也是一种占用。所以使用 CallerRunsPolicy 没啥问题。</p>
+<p>但是，Tomcat 线程属于宝贵资源，如果出现长时间占用，那就是一个性能瓶颈点。</p>
+<p>所以，本质上还是不应该有明显的慢接口存在。</p>
+<p>关于“尽快释放宝贵资源”这个点，你也可以看 Dubbo 服务段线程模型，这里相当于是一个最佳实践了</p>
+<blockquote>
+<p><a target="_blank" rel="noopener" href="https://cn.dubbo.apache.org/zh-cn/overview/mannual/java-sdk/advanced-features-and-usage/performance/threading-model/provider/">https://cn.dubbo.apache.org/zh-cn/overview/mannual/java-sdk/advanced-features-and-usage/performance/threading-model/provider/</a></p>
+</blockquote>
+<p><img src="https://s2.loli.net/2024/09/02/9SLPvH2KUlDbtx7.png" alt="2a5e654b6f1a51b6e0cb7e9e26b03c3d.png"></p>
+<p>Dubbo 协议 Provider 线程模型的默认配置是 AllDispatcher。</p>
+<p>针对 AllDispatcher 官方给了一个示意图：</p>
+<p><img src="https://s2.loli.net/2024/09/02/WqsMADG6gzEPmiI.png" alt="c0c135e8dc0fe9b58f5226c1b2e044e5.png"></p>
+<p>图中有 IO thread pool 和 Dubbo thread pool 这两个线程池。</p>
+<p>为什么要搞两个线程池呢？</p>
+<p>因为 IO 线程是非常宝贵的资源，它只是应该承担发送请求、发送响应的功能。</p>
+<p>搞个 Dubbo 线程池的目的就是为了尽快释放宝贵的 IO 线程资源。</p>
+<p>比如 received、connected、disconnected、caught 这些行为都是在 Dubbo 线程上执行的，反序列化的动作也是在 Dubbo 的线程池中做的。</p>
+<p>类比到我们前面的例子中，IO 线程池就是 Tomcat 线程池，Dubbo 线程池就是我们项目中的自定义线程池。</p>
+<p>模式，就是这个模式。</p>
+<p>道理，就是这个道理。</p>
+<h2 id="继续挖"><a href="#继续挖" class="headerlink" title="继续挖"></a>继续挖</h2><p>如果这真的是一个面试场景题，增加核心线程数和 CallerRunsPolicy 这个方案，面试官肯定是不会满意的，你还得继续往下挖掘。</p>
+<p>比如，为什么下游返回的那么慢？</p>
+<p>是不是接口上有可以优化的空间？</p>
+<p>是不是有慢 SQL？</p>
+<p>是不是多返回了不需要的信息？</p>
+<p>是不是有不合理的数据结构？</p>
+<p>是不是在接口里面干了一些其他的事情？</p>
+<p>是不是下游的下游拉胯了？</p>
+<p>…</p>
+<p>不要老是从自己身上找原因，也合理指出其他人的问题，对吧？</p>
+<p>总之，20 多个异步接口，一定是有相对较慢的那个。</p>
+<p>它，就是那块短板，找到它，然后定向分析它。</p>
+<p>如果下游说实在是没有优化空间了，那就加点钱嘛，多搞几台机器，横向扩展一下，花不了几个钱的。</p>
+<p>这种情况在实际工作中还真的挺常见的，歪师傅就遇到过。</p>
+<p>上游服务有 8 台机器，我只有 4 台机器，上游并发量一起来，就说我接口响应慢了。</p>
+<p>机器都差了一倍，请求来得又太多，都堆起来了，那可不得慢嘛。</p>
+<p>当然了，把锅甩给下游，下游不一定会接，问题还是得靠自己解决。</p>
+<p>通过前面的分析，我们知道了可以调大核心线程数，但是面试官直接追问一句，调到多少合适呢？</p>
+<p>合适，就是一个很微妙的词了。</p>
+<p>一般我们用“动态调整”来应对这个问题。</p>
+<p>但是在这个“报表”的场景下，歪师傅觉得还真的可以调到一个合适的值，甚至可以用“精准”来形容这个值。</p>
+<p>怎么做呢？</p>
+<p>上个图：</p>
+<p><img src="https://s2.loli.net/2024/09/02/M9TItnQPcilABCm.png" alt="dca9bb25c3151750f06e4404c5e83c61.png"></p>
+<p>在每个接口里面搞个线程池，这个线程池的生命周期和一次请求绑定。</p>
+<p>即一次请求结束，这个线程池就 shutdown 掉。</p>
+<p>你一个接口背后需要调用下游的多少个异步接口，你在写的时候是知道的。</p>
+<p>假设是 15 个，那么你在这个请求里面搞个核心线程数是 15 个的线程池。</p>
+<p>我就问你，精不精准？</p>
+<p>这种用法，就比较适用于这个较为特殊的场景。</p>
+<p>特殊点就在于，需要对数据进行聚合处理，所以需要异步调用多个下游服务，要拿到下游服务的数据返回之后，才能返回给调用方。</p>
+<p>但是这里上游服务发起调用具有不确定性，可能是同时来 10 个请求，也可能是同时来 1000 个请求。</p>
+<p>这种情况导致怎么去合理的定义一个全局的线程池，是一个令人头疼的问题。</p>
+<p>所以，换个思路。</p>
+<p>在不确定性中寻找确定性。</p>
+<p>不确定性是不知道有多少个请求会过来。确定性是每个前端过来的请求，都会对应固定数量的下游接口。</p>
+<p>那就不要用全局的线程池了，给每个请求都单独搞个线程池，及时创建，及时回收。</p>
+<p>当然，这个方案的弊端之一在于不存在线程池的复用了，只是为了单纯的异步。</p>
+<p>弊端之二就是有可能瞬间产生大量的线程，对内存造成一定的压力，但是理论上这些线程都会被很快的回收，所有这点压力应该是在可以接受的范围内。</p>
+<p>但是你想想，你调大核心线程数的根本目的是为了给每个异步任务都分配一个线程。</p>
+<p>我上面的这个方案能达到一样的目的，而且，控制更加精准。</p>
+<h2 id="接着挖"><a href="#接着挖" class="headerlink" title="接着挖"></a>接着挖</h2><p>其实你有没有发现前面说的调整核心数、一个请求对应一个线程池这些方案都很别扭，感觉都不得劲儿？</p>
+<p>是的，我就是有这样的感觉。</p>
+<p>所以，我再看看问题：</p>
+<p><img src="https://s2.loli.net/2024/09/02/dMnpSeDbHOiLP1I.png" alt="b3beff3aa3f74eb06ebae610d728070f.png"></p>
+<p>“类似于报表的系统”。</p>
+<p>如果我是刚刚工作三年的时候，我可能会在接到这个需求之后就去思考技术方案。</p>
+<p>但是现在随着工作年限的增加，我会带着“质疑”的眼光去看待需求，去判断是否是一个“伪需求”。</p>
+<p>在需求和技术落地之间找到一个平衡点，让业务和开发都舒服一点。</p>
+<p>比如既然是报表为什么要求要实时响应呢？</p>
+<p>前端发起请求，后端收到请求之后先返回前端，给个提示：哥们，收到你的请求了，生成报表需要点时间，请十分钟后到 xx 菜单下访问。</p>
+<p>然后你后台慢慢处理，其实五分钟就生成好了，然后你给哥们发个短信提醒：数据已就位。</p>
+<p>别人还会觉得：可以啊，挺快的，科技的哥们真厉害。</p>
+<p>再说了，报表一般来说不都是 T-1 日的数据展示吗？</p>
+<p>既然是 T-1 日的数据，那为什么不在凌晨做个定时任务，先主动把各个系统前一日的数据聚合一下，在本地放一份呢？</p>
+<p>这样就不用在前端调用的时候，实时去调用接口聚合了嘛。查本地数据，那不是很快的事情，性能一下就上去了。</p>
+<p>或者再往前想一步：为什么你要去调用别的系统的接口去获取数据呢？</p>
+<p>因为你自己系统没有数据。</p>
+<p>为什么你自己系统没有数据呢？</p>
+<p>因为你们是微服务架构，数据散落在各个微服务系统里面。</p>
+<p>那在拆分微服务的时候，有没有考虑过各种各样的报表需求？</p>
+<p>如果考虑过，是不是就应该建设一个大数据平台，由大数据平台将各个微服务系统的业务数据抽走，然后整合数据，基于这些数据出各种各样的报表。</p>
+<p>而微服务系统，只需要关注业务就好了。</p>
+<p>如果你们没有大数据平台，你应该给领导充分阐述该平台在当下的必要性，以及未来的重要性。</p>
+<p>然后，这个功能就不需要你来做了。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%A4%9A%E7%BA%BF%E7%A8%8B/" rel="tag"># 多线程</a>
+              <a href="/tags/%E5%85%AB%E8%82%A1%E6%96%87/" rel="tag"># 八股文</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2024/09/03/%E5%A4%9A%E7%BA%BF%E7%A8%8B/%E7%BA%BF%E7%A8%8B%E6%B1%A0%E9%81%87%E5%88%B0%E7%88%B6%E5%AD%90%E4%BB%BB%E5%8A%A1%EF%BC%8C%E6%9C%89%E5%A4%A7%E5%9D%91%EF%BC%8C%E8%A6%81%E6%B3%A8%E6%84%8F/" rel="prev" title="线程池遇到父子任务，有大坑，要注意（草稿）">
+      <i class="fa fa-chevron-left"></i> 线程池遇到父子任务，有大坑，要注意（草稿）
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BB%A7%E7%BB%AD%E6%8C%96"><span class="nav-number">1.</span> <span class="nav-text">继续挖</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8E%A5%E7%9D%80%E6%8C%96"><span class="nav-number">2.</span> <span class="nav-text">接着挖</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Pawn Huang"
+      src="/upload/avatar.png">
+  <p class="site-author-name" itemprop="name">Pawn Huang</p>
+  <div class="site-description" itemprop="description">一个非典型程序员</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">25</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">13</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Pawn Huang</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+    <span title="站点总字数">181k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">2:44</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://pisces.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Pisces</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

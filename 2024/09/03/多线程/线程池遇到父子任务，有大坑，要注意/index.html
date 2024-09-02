@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.2">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<link rel="stylesheet" href="//fonts.googleapis.com/css?family=Lato:300,300italic,400,400italic,700,700italic|Lobster Two:300,300italic,400,400italic,700,700italic|PT Mono:300,300italic,400,400italic,700,700italic&display=swap&subset=latin,latin-ext">
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"pawnhuang.github.io","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="最近在使用线程池的时候踩了一个坑，给你分享一下。 在实际业务场景下，涉及到业务代码和不同的微服务，导致问题有点难以定位，但是最终分析出原因之后，发现可以用一个很简单的例子来演示。 所以歪师傅这次先用 Demo 说问题，再说场景，方便吸收。  Demo">
+<meta property="og:type" content="article">
+<meta property="og:title" content="线程池遇到父子任务，有大坑，要注意（草稿）">
+<meta property="og:url" content="https://pawnhuang.github.io/2024/09/03/%E5%A4%9A%E7%BA%BF%E7%A8%8B/%E7%BA%BF%E7%A8%8B%E6%B1%A0%E9%81%87%E5%88%B0%E7%88%B6%E5%AD%90%E4%BB%BB%E5%8A%A1%EF%BC%8C%E6%9C%89%E5%A4%A7%E5%9D%91%EF%BC%8C%E8%A6%81%E6%B3%A8%E6%84%8F/index.html">
+<meta property="og:site_name" content="Fake it till you make it">
+<meta property="og:description" content="最近在使用线程池的时候踩了一个坑，给你分享一下。 在实际业务场景下，涉及到业务代码和不同的微服务，导致问题有点难以定位，但是最终分析出原因之后，发现可以用一个很简单的例子来演示。 所以歪师傅这次先用 Demo 说问题，再说场景，方便吸收。  Demo">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="en-resource://database/708:0">
+<meta property="og:image" content="en-resource://database/710:0">
+<meta property="og:image" content="en-resource://database/712:0">
+<meta property="og:image" content="en-resource://database/714:0">
+<meta property="og:image" content="en-resource://database/716:0">
+<meta property="og:image" content="en-resource://database/718:0">
+<meta property="og:image" content="en-resource://database/720:0">
+<meta property="og:image" content="en-resource://database/722:0">
+<meta property="og:image" content="en-resource://database/724:0">
+<meta property="og:image" content="en-resource://database/726:0">
+<meta property="og:image" content="en-resource://database/728:0">
+<meta property="og:image" content="en-resource://database/730:0">
+<meta property="og:image" content="en-resource://database/732:0">
+<meta property="og:image" content="en-resource://database/734:0">
+<meta property="og:image" content="en-resource://database/736:0">
+<meta property="og:image" content="en-resource://database/738:0">
+<meta property="og:image" content="en-resource://database/740:0">
+<meta property="og:image" content="en-resource://database/742:0">
+<meta property="og:image" content="en-resource://database/744:0">
+<meta property="og:image" content="en-resource://database/746:0">
+<meta property="og:image" content="en-resource://database/748:0">
+<meta property="og:image" content="en-resource://database/750:0">
+<meta property="og:image" content="en-resource://database/752:0">
+<meta property="og:image" content="en-resource://database/754:0">
+<meta property="og:image" content="en-resource://database/756:0">
+<meta property="article:published_time" content="2024-09-02T17:31:19.000Z">
+<meta property="article:modified_time" content="2024-09-02T17:17:47.706Z">
+<meta property="article:author" content="Pawn Huang">
+<meta property="article:tag" content="多线程">
+<meta property="article:tag" content="八股文">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="en-resource://database/708:0">
+
+<link rel="canonical" href="https://pawnhuang.github.io/2024/09/03/%E5%A4%9A%E7%BA%BF%E7%A8%8B/%E7%BA%BF%E7%A8%8B%E6%B1%A0%E9%81%87%E5%88%B0%E7%88%B6%E5%AD%90%E4%BB%BB%E5%8A%A1%EF%BC%8C%E6%9C%89%E5%A4%A7%E5%9D%91%EF%BC%8C%E8%A6%81%E6%B3%A8%E6%84%8F/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>线程池遇到父子任务，有大坑，要注意（草稿） | Fake it till you make it</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Fake it till you make it</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Pawn Huang's Blog</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://pawnhuang.github.io/2024/09/03/%E5%A4%9A%E7%BA%BF%E7%A8%8B/%E7%BA%BF%E7%A8%8B%E6%B1%A0%E9%81%87%E5%88%B0%E7%88%B6%E5%AD%90%E4%BB%BB%E5%8A%A1%EF%BC%8C%E6%9C%89%E5%A4%A7%E5%9D%91%EF%BC%8C%E8%A6%81%E6%B3%A8%E6%84%8F/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/upload/avatar.png">
+      <meta itemprop="name" content="Pawn Huang">
+      <meta itemprop="description" content="一个非典型程序员">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Fake it till you make it">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          线程池遇到父子任务，有大坑，要注意（草稿）
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+              
+
+              <time title="创建时间：2024-09-03 01:31:19 / 修改时间：01:17:47" itemprop="dateCreated datePublished" datetime="2024-09-03T01:31:19+08:00">2024-09-03</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E5%A4%9A%E7%BA%BF%E7%A8%8B/" itemprop="url" rel="index"><span itemprop="name">多线程</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">本文字数：</span>
+              <span>3.5k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">阅读时长 &asymp;</span>
+              <span>3 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>最近在使用线程池的时候踩了一个坑，给你分享一下。</p>
+<p>在实际业务场景下，涉及到业务代码和不同的微服务，导致问题有点难以定位，但是最终分析出原因之后，发现可以用一个很简单的例子来演示。</p>
+<p>所以歪师傅这次先用 Demo 说问题，再说场景，方便吸收。</p>
+<p><img src="en-resource://database/708:0" alt="cdfcb8560ec948d0fbb2bf3e8952eba3.png"></p>
+<h2 id="Demo"><a href="#Demo" class="headerlink" title="Demo"></a>Demo</h2><p>老规矩，还是先上个代码：</p>
+<p><img src="en-resource://database/710:0" alt="02a091c12e7ce28a5eb76ba68f61989c.png"></p>
+<p>这个代码的逻辑非常简单，首先我们搞了一个线程池，然后起一个 for 循环往线程池里面仍了 5 个任务，这是核心逻辑。</p>
+<p>对于这几个任务，我们的这个自定义线程池处理起来，不能说得心应手吧，至少也是手拿把掐。</p>
+<p>其他的 StopWatch 是为了统计运行时间用的。 至于 CountDownLatch，你可以理解为在业务流程中，需要这五个任务都执行完成之后才能往下走，所以我搞了一个 CountDownLatch。</p>
+<p>这个代码运行起来是没有任何问题的，我们在日志中搜索“执行完成”，也能搜到 5 个，这个结果也能证明程序是正常结束的：</p>
+<p><img src="en-resource://database/712:0" alt="2ffa8083c59e7c0739c1237c1b76be4e.png"></p>
+<p>同时，可以看到运行时间是 4s。</p>
+<p>示意图大概是这样的：</p>
+<p><img src="en-resource://database/714:0" alt="977faa950e1395f5d8f7729ad98f609d.png"></p>
+<p>然后看着这个代码，发现了一个可以优化的地方：</p>
+<p><img src="en-resource://database/716:0" alt="3dd5fe8d407764879750658ea43a5977.png"></p>
+<p>这个地方从数据库捞出来的数据，它们之间是没有依赖关系的，也就是说它们之间也是可以并行执行的。</p>
+<p>所以把代码改成了这样：</p>
+<p><img src="en-resource://database/718:0" alt="b7bd836031f27b08ac01ccd94201d9e5.png"></p>
+<p>在异步线程里面去处理这部分从数据库中捞出来的数据，并行处理加快响应速度。</p>
+<p>对应到图片，大概就是这个意思：</p>
+<p><img src="en-resource://database/720:0" alt="7bb84a7512e8a85e1ba8e99065e5e03e.png"></p>
+<p>把程序运行起来之后，日志变成了这样：</p>
+<p><img src="en-resource://database/722:0" alt="0966c9d15bfdfed9d0e0d897812f3d53.png"></p>
+<p>我们搜索“执行完成”，也能搜到 5 个对应输出。</p>
+<p>而且我们就拿“任务2”来说：</p>
+<p><img src="en-resource://database/724:0" alt="3f43ab28a81aa96449dde4cbb9e9ac21.png"></p>
+<figure class="highlight subunit"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】开始执行--- </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】执行完成--- </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-1</span>,【任务2】开始处理数据=1 </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-2</span>,【任务2】开始处理数据=2</span><br></pre></td></tr></table></figure>
+
+
+<p>从日志输出来看，任务 2 需要处理的两个数据，确实是在不同的异步线程中处理数据，也实现了我的需求。</p>
+<p>但是，程序运行直接就是到了 9.9ms：</p>
+<p><img src="en-resource://database/726:0" alt="0e61da6218b726133ab1c40b7d4b384b.png"></p>
+<p>这个优化这么牛逼的吗？</p>
+<p>从 4s 到了 9.9ms？</p>
+<p>稍加分析，你会发现这里面是有问题的。</p>
+<p>那么问题就来了，到底是啥问题呢？</p>
+<p>问题就是由于转异步了，所以 for 循环里面的任务中的 countDownLatch 很快就减到 0 了。</p>
+<p>于是 await 继续执行，所以很快就输出了程序运行时间。</p>
+<p>然而实际上子任务还在继续执行，程序并没有真正完成。</p>
+<p>9.9ms 只是任务提交到线程池的时间，每个任务的数据处理时间还没算呢：</p>
+<p><img src="en-resource://database/728:0" alt="e982e80631c5ee58ecefe5f26adf5f02.png"></p>
+<p>从日志输出上也可以看出，在输出了 StopWatch 的日志后，各个任务还在处理数据。</p>
+<p>这样时间就显得不够真实。</p>
+<p>那么我们应该怎么办呢？</p>
+<p>很简单嘛，需要子任务真正执行完成后，父任务的 countDownLatch 才能进行 countDown 的动作。</p>
+<p>具体实现上就是给子任务再加一个 countDownLatch 栅栏：</p>
+<p><img src="en-resource://database/730:0" alt="3f80049115376aff07bf5d2483e9c317.png"></p>
+<p>我们希望的运行结果应该是这样的：</p>
+<figure class="highlight subunit"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】开始执行--- </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-1</span>,【任务2】开始处理数据=1 </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-2</span>,【任务2】开始处理数据=2 </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】执行完成---</span><br></pre></td></tr></table></figure>
+
+
+<p>即子任务全部完成之后，父任务才能算执行完成，这样统计出来的时间才是准确的。</p>
+<p>思路清晰，非常完美，再次运行，观察日志我们会发现：</p>
+<p><img src="en-resource://database/732:0" alt="ea23ee882a713f1bbefa751215ae9129.png"></p>
+<p>呃，怎么回事，日志怎么不输出了？</p>
+<p>是的，就是不输出了。</p>
+<p>不输出了，就是踩到这个坑了。</p>
+<p>不论你重启多少次，都是这样：日志不输出了，程序就像是卡着了一样。</p>
+<p><img src="en-resource://database/734:0" alt="67097d515491de337e94c6c03495a263.png"></p>
+<h2 id="坑在哪儿"><a href="#坑在哪儿" class="headerlink" title="坑在哪儿"></a>坑在哪儿</h2><p>上面这个 Demo 已经是我基于遇到的生产问题，极力简化后的版本了。</p>
+<p>现在，这个坑也已经呈现在你眼前了。</p>
+<p>我们一起来分析一波。</p>
+<p>首先，我问你：真的在线上遇到这种程序“假死”的问题，你会怎么办？</p>
+<p>早几年，歪师傅的习惯是抱着代码慢慢啃，试图从代码中找到端倪。</p>
+<p>这样确实是可以，但是通常来说效率不高。</p>
+<p>现在我的习惯是直接把现场 dump 下来，分析现场。</p>
+<p>比如在这个场景下，我们直观上的感受是“卡住了”，那就 dump 一把线程，管它有枣没枣，打一杆子再说：</p>
+<p><img src="en-resource://database/736:0" alt="dbf92c064da303261fc263ba466d74cf.png"></p>
+<p>通过 Dump 文件，可以发现线程池的线程都在 MainTest 的第 30 行上 parking ，处于等待状态：</p>
+<p><img src="en-resource://database/738:0" alt="33a7c22a3d889488db9033f6166a7b16.png"></p>
+<p>那么第 30 行是啥玩意？</p>
+<p><img src="en-resource://database/740:0" alt="70b146422b8b59b0968132b017f66e18.png"></p>
+<p>这行代码在干啥？</p>
+<blockquote>
+<p>countDownLatchSub.await();</p>
+</blockquote>
+<p>是父任务在等待子任务执行结束，运行 finally 代码，把 countDownLatchSub 的计数 countDown 到 0，才会继续执行：</p>
+<p><img src="en-resource://database/742:0" alt="80c679842aebbf34d460772fb83725b9.png"></p>
+<p>所以现在的现象就是子任务的 countDownLatchSub 把父任务的拦住了。</p>
+<p>换句话说就是父任务被拦住是因为子任务的 finally 代码中的 countDownLatchSub.countDown() 方法没有被执行。</p>
+<p>好，那么最关键的问题就来了：为什么没有执行？</p>
+<p>你先别往下看，闭上眼睛在你的小脑瓜子里面推演一下，琢磨一下：finally 为什么没有执行？</p>
+<p><img src="en-resource://database/744:0" alt="d7ef083a6300f875f100b1d7da30b6ad.png"></p>
+<p>或者再换个更加接近真实的问题：子任务为什么没有执行？</p>
+<p>这个点，非常简单，可以说一点就破。</p>
+<p>琢磨明白了，这个坑的原理摸摸清楚了。</p>
+<p>…</p>
+<p>…</p>
+<p>…</p>
+<p>琢磨明白了吗？你就刷刷往下看？</p>
+<p><img src="en-resource://database/746:0" alt="8d6a12da7c8c6403ec9e19cb3fda33dd.png"></p>
+<p>没明白我再给你一个信息：需要结合线程池的参数和运行原理来分析。</p>
+<p>什么？</p>
+<p>你说线程池的运行原理你不清楚？</p>
+<p>请你出门右转好嘛。</p>
+<p>…</p>
+<p>…</p>
+<p>…</p>
+<p>好，不管你“恍然大悟”了没有。</p>
+<p>让你知道“一点就破”这四个是怎么回事儿。</p>
+<p>首先，我们把目光聚焦在线程池这里：</p>
+<p><img src="en-resource://database/748:0" alt="071ef3a06e1a425f9883ddf1522aa58c.png"></p>
+<p>这个线程池核心线程数是 3，但是我们要提交 5 个任务到线程池去。</p>
+<p>父任务哐哐哐，就把核心线程数占满了。</p>
+<p>接下来子任务也要往这个线程池提交任务怎么办？</p>
+<p>当然是进队列等着了。</p>
+<p>一进队列，就完犊子。</p>
+<p>到这里，我觉得你应该能想明白问题了。</p>
+<p>应该给到我一个恍然大悟的表情，并配上“哦哦哦~”这样的内心 OS。</p>
+<p><img src="en-resource://database/750:0" alt="547761cceb36e0ee84c7f280cd01dc45.png"></p>
+<p><strong>你想想，父任务这个时候干啥？</strong></p>
+<p>是不是等在 countDownLatchSub.await() 这里。</p>
+<p>而 countDownLatchSub.await() 什么时候能继续执行？</p>
+<p>是不是要所有子任务都执行 finally 后？</p>
+<p>那么子任务现在在干啥？</p>
+<p>是不是都在线程池里面的队列等着被执行呢？</p>
+<p>那线程池队列里面的任务什么时候才执行？</p>
+<p>是不是等着有空闲线程的时候？</p>
+<p>那现在有没有空闲线程？</p>
+<p>没有，所有的线程都去执行父任务去了。</p>
+<p><strong>那你想想，父任务这个时候干啥？</strong></p>
+<p>是不是等在 countDownLatchSub.await() 这里。</p>
+<p>…</p>
+<p>父任务在等子任务执行。</p>
+<p>子任务在等线程池调度。</p>
+<p>线程池在等父任务释放线程。</p>
+<p>闭环了，相互等待了，家人们。</p>
+<p>这，就是坑。</p>
+<p>现在把坑的原理摸清楚了，我在给你说一下真实的线上场景踩到这个坑是怎么样的呢？</p>
+<p><img src="en-resource://database/752:0" alt="729ba8d23d1540c36531f680ff4ee960.png"></p>
+<p>上游发起请求到微服务 A 的接口 1，该接口需要调用微服务 B 的接口 2。</p>
+<p>但是微服务 B 的接口 2，需要从微服务 A 接口 3 获取数据。</p>
+<p>然而在微服务 A 内部，全局使用的是同一个自定义线程池。</p>
+<p>更巧的是接口 1 和接口 3 内部都使用了这个自定义线程池做异步并行处理，想着是加快响应速度。</p>
+<p>整个情况就变成了这样：</p>
+<p>接口 1 收到请求之后，把请求转到自定义线程池中，然后等接口 2 返回。<br>接口 2 调用接口 3，并等待返回。<br>接口 3 里面把请求转到了自定义线程池中，被放入了队列。<br>线程池的线程都被接口 1 给占住了，没有资源去执行队列里面的接口 3 任务。<br>相互等待，一直僵持。<br>我们的 Demo 还是能比较清晰的看到父子任务之间的关系。</p>
+<p>但是在这个微服务的场景下，在无形之间，就形成了不易察觉的父子任务关系。</p>
+<p>所以就踩到了这个坑。</p>
+<h2 id="怎么避免"><a href="#怎么避免" class="headerlink" title="怎么避免"></a>怎么避免</h2><p>找到了坑的原因，解决方案就随之而出了。</p>
+<p>父子任务不要共用一个线程池，给子任务也搞一个自定义线程池就可以了：</p>
+<p><img src="en-resource://database/754:0" alt="7c159cd6f108dc89e1007c2b1e1bb392.png"></p>
+<p>运行起来看看日志：</p>
+<p><img src="en-resource://database/756:0" alt="1e294ad02633583a8d3a906351f9eafd.png"></p>
+<p>首先整体运行时间只需要 2s 了，达到了我想要的效果。</p>
+<p>另外，我们观察一个具体的任务：</p>
+<figure class="highlight subunit"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】开始执行--- </span><br><span class="line">当前线程pool<span class="string">-2</span>-thread<span class="string">-1</span>,【任务2】开始处理数据=1 </span><br><span class="line">当前线程pool<span class="string">-2</span>-thread<span class="string">-4</span>,【任务2】开始处理数据=2 </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】执行完成---</span><br></pre></td></tr></table></figure>
+
+<p>日志输出符合我们前面分析的，所有子任务执行完成后，父任务才打印执行完成，且子任务在不同的线程中执行。</p>
+<p>而使用不同的线程池，换一个高大上的说法就叫做：线程池隔离。</p>
+<p>而且在一个项目中，公用一个线程池，也是一个埋坑的逻辑。</p>
+<p>至少给你觉得关键的逻辑，单独分配一个线程池吧。</p>
+<p>避免出现线程池的线程都在执行非核心逻辑了，反而重要的任务在队列里面排队去了。</p>
+<p>这就有点不合理了。</p>
+<p>最后，一句话总结这个问题：</p>
+<blockquote>
+<p>如果线程池的任务之间存在父子关系，那么请不要使用同一个线程池。如果使用了同一个线程池，可能会因为子任务进了队列，导致父任务一直等待，出现假死现象。</p>
+</blockquote>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%A4%9A%E7%BA%BF%E7%A8%8B/" rel="tag"># 多线程</a>
+              <a href="/tags/%E5%85%AB%E8%82%A1%E6%96%87/" rel="tag"># 八股文</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2024/09/02/%E5%A4%9A%E7%BA%BF%E7%A8%8B/%E5%8D%83%E4%B8%87%E4%B8%8D%E8%A6%81%E6%8A%8ARequest%E4%BC%A0%E9%80%92%E5%88%B0%E5%BC%82%E6%AD%A5%E7%BA%BF%E7%A8%8B%E9%87%8C%E9%9D%A2%EF%BC%81%E6%9C%89%E5%9D%91!/" rel="prev" title="千万不要把Request传递到异步线程里面！有坑！">
+      <i class="fa fa-chevron-left"></i> 千万不要把Request传递到异步线程里面！有坑！
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2024/09/03/%E5%A4%9A%E7%BA%BF%E7%A8%8B/%E4%B8%80%E6%AC%A1%E5%85%B3%E4%BA%8E%E7%BA%BF%E7%A8%8B%E6%B1%A0%E4%BD%BF%E7%94%A8%E5%9C%BA%E6%99%AF%E7%9A%84%E8%AE%A8%E8%AE%BA/" rel="next" title="一次关于线程池使用场景的讨论">
+      一次关于线程池使用场景的讨论 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Demo"><span class="nav-number">1.</span> <span class="nav-text">Demo</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9D%91%E5%9C%A8%E5%93%AA%E5%84%BF"><span class="nav-number">2.</span> <span class="nav-text">坑在哪儿</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%8E%E4%B9%88%E9%81%BF%E5%85%8D"><span class="nav-number">3.</span> <span class="nav-text">怎么避免</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Pawn Huang"
+      src="/upload/avatar.png">
+  <p class="site-author-name" itemprop="name">Pawn Huang</p>
+  <div class="site-description" itemprop="description">一个非典型程序员</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">25</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">13</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Pawn Huang</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+    <span title="站点总字数">181k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">2:44</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://pisces.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Pisces</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
