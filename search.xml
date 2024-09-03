@@ -2395,36 +2395,36 @@ e2.hash &amp; newCap-1
     <content><![CDATA[<p>最近在使用线程池的时候踩了一个坑，给你分享一下。</p>
 <p>在实际业务场景下，涉及到业务代码和不同的微服务，导致问题有点难以定位，但是最终分析出原因之后，发现可以用一个很简单的例子来演示。</p>
 <p>所以歪师傅这次先用 Demo 说问题，再说场景，方便吸收。</p>
-<p><img src="en-resource://database/708:0" alt="cdfcb8560ec948d0fbb2bf3e8952eba3.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/WQtCj3yPwYp9vHh.png" alt="cdfcb8560ec948d0fbb2bf3e8952eba3.png"></p>
 <h2 id="Demo"><a href="#Demo" class="headerlink" title="Demo"></a>Demo</h2><p>老规矩，还是先上个代码：</p>
-<p><img src="en-resource://database/710:0" alt="02a091c12e7ce28a5eb76ba68f61989c.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/2jfJPEWbdYnpDgK.png" alt="02a091c12e7ce28a5eb76ba68f61989c.png"></p>
 <p>这个代码的逻辑非常简单，首先我们搞了一个线程池，然后起一个 for 循环往线程池里面仍了 5 个任务，这是核心逻辑。</p>
 <p>对于这几个任务，我们的这个自定义线程池处理起来，不能说得心应手吧，至少也是手拿把掐。</p>
 <p>其他的 StopWatch 是为了统计运行时间用的。 至于 CountDownLatch，你可以理解为在业务流程中，需要这五个任务都执行完成之后才能往下走，所以我搞了一个 CountDownLatch。</p>
 <p>这个代码运行起来是没有任何问题的，我们在日志中搜索“执行完成”，也能搜到 5 个，这个结果也能证明程序是正常结束的：</p>
-<p><img src="en-resource://database/712:0" alt="2ffa8083c59e7c0739c1237c1b76be4e.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/FuYUoHXOMRiJrwD.png" alt="2ffa8083c59e7c0739c1237c1b76be4e.png"></p>
 <p>同时，可以看到运行时间是 4s。</p>
 <p>示意图大概是这样的：</p>
-<p><img src="en-resource://database/714:0" alt="977faa950e1395f5d8f7729ad98f609d.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/rBRqi6U4hw1a2oV.png" alt="977faa950e1395f5d8f7729ad98f609d.png"></p>
 <p>然后看着这个代码，发现了一个可以优化的地方：</p>
-<p><img src="en-resource://database/716:0" alt="3dd5fe8d407764879750658ea43a5977.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/H4moCxeRnFJWfkU.png" alt="3dd5fe8d407764879750658ea43a5977.png"></p>
 <p>这个地方从数据库捞出来的数据，它们之间是没有依赖关系的，也就是说它们之间也是可以并行执行的。</p>
 <p>所以把代码改成了这样：</p>
-<p><img src="en-resource://database/718:0" alt="b7bd836031f27b08ac01ccd94201d9e5.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/kRovT3JfqeM25P4.png" alt="b7bd836031f27b08ac01ccd94201d9e5.png"></p>
 <p>在异步线程里面去处理这部分从数据库中捞出来的数据，并行处理加快响应速度。</p>
 <p>对应到图片，大概就是这个意思：</p>
-<p><img src="en-resource://database/720:0" alt="7bb84a7512e8a85e1ba8e99065e5e03e.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/C3PzUg4dGmN6Muy.png" alt="7bb84a7512e8a85e1ba8e99065e5e03e.png"></p>
 <p>把程序运行起来之后，日志变成了这样：</p>
-<p><img src="en-resource://database/722:0" alt="0966c9d15bfdfed9d0e0d897812f3d53.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/Y3q5viEDergSbFa.png" alt="0966c9d15bfdfed9d0e0d897812f3d53.png"></p>
 <p>我们搜索“执行完成”，也能搜到 5 个对应输出。</p>
 <p>而且我们就拿“任务2”来说：</p>
-<p><img src="en-resource://database/724:0" alt="3f43ab28a81aa96449dde4cbb9e9ac21.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/YUfzGV52lWNcjRZ.png" alt="3f43ab28a81aa96449dde4cbb9e9ac21.png"></p>
 <figure class="highlight subunit"><table><tr><td class="code"><pre><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】开始执行--- </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】执行完成--- </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-1</span>,【任务2】开始处理数据=1 </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-2</span>,【任务2】开始处理数据=2</span><br></pre></td></tr></table></figure>
 
 
 <p>从日志输出来看，任务 2 需要处理的两个数据，确实是在不同的异步线程中处理数据，也实现了我的需求。</p>
 <p>但是，程序运行直接就是到了 9.9ms：</p>
-<p><img src="en-resource://database/726:0" alt="0e61da6218b726133ab1c40b7d4b384b.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/4CaF9MtK1Pkbvhn.png" alt="0e61da6218b726133ab1c40b7d4b384b.png"></p>
 <p>这个优化这么牛逼的吗？</p>
 <p>从 4s 到了 9.9ms？</p>
 <p>稍加分析，你会发现这里面是有问题的。</p>
@@ -2433,25 +2433,25 @@ e2.hash &amp; newCap-1
 <p>于是 await 继续执行，所以很快就输出了程序运行时间。</p>
 <p>然而实际上子任务还在继续执行，程序并没有真正完成。</p>
 <p>9.9ms 只是任务提交到线程池的时间，每个任务的数据处理时间还没算呢：</p>
-<p><img src="en-resource://database/728:0" alt="e982e80631c5ee58ecefe5f26adf5f02.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/nV9Qc4brgmRILPT.png" alt="e982e80631c5ee58ecefe5f26adf5f02.png"></p>
 <p>从日志输出上也可以看出，在输出了 StopWatch 的日志后，各个任务还在处理数据。</p>
 <p>这样时间就显得不够真实。</p>
 <p>那么我们应该怎么办呢？</p>
 <p>很简单嘛，需要子任务真正执行完成后，父任务的 countDownLatch 才能进行 countDown 的动作。</p>
 <p>具体实现上就是给子任务再加一个 countDownLatch 栅栏：</p>
-<p><img src="en-resource://database/730:0" alt="3f80049115376aff07bf5d2483e9c317.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/8XJMVRxNUKCwToh.png" alt="3f80049115376aff07bf5d2483e9c317.png"></p>
 <p>我们希望的运行结果应该是这样的：</p>
 <figure class="highlight subunit"><table><tr><td class="code"><pre><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】开始执行--- </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-1</span>,【任务2】开始处理数据=1 </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-2</span>,【任务2】开始处理数据=2 </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】执行完成---</span><br></pre></td></tr></table></figure>
 
 
 <p>即子任务全部完成之后，父任务才能算执行完成，这样统计出来的时间才是准确的。</p>
 <p>思路清晰，非常完美，再次运行，观察日志我们会发现：</p>
-<p><img src="en-resource://database/732:0" alt="ea23ee882a713f1bbefa751215ae9129.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/VIoXJTivs5LOASa.png" alt="ea23ee882a713f1bbefa751215ae9129.png"></p>
 <p>呃，怎么回事，日志怎么不输出了？</p>
 <p>是的，就是不输出了。</p>
 <p>不输出了，就是踩到这个坑了。</p>
 <p>不论你重启多少次，都是这样：日志不输出了，程序就像是卡着了一样。</p>
-<p><img src="en-resource://database/734:0" alt="67097d515491de337e94c6c03495a263.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/c4BHhfDuOsV7imE.png" alt="67097d515491de337e94c6c03495a263.png"></p>
 <h2 id="坑在哪儿"><a href="#坑在哪儿" class="headerlink" title="坑在哪儿"></a>坑在哪儿</h2><p>上面这个 Demo 已经是我基于遇到的生产问题，极力简化后的版本了。</p>
 <p>现在，这个坑也已经呈现在你眼前了。</p>
 <p>我们一起来分析一波。</p>
@@ -2460,22 +2460,22 @@ e2.hash &amp; newCap-1
 <p>这样确实是可以，但是通常来说效率不高。</p>
 <p>现在我的习惯是直接把现场 dump 下来，分析现场。</p>
 <p>比如在这个场景下，我们直观上的感受是“卡住了”，那就 dump 一把线程，管它有枣没枣，打一杆子再说：</p>
-<p><img src="en-resource://database/736:0" alt="dbf92c064da303261fc263ba466d74cf.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/BEUiPn1TaOqVo4R.png" alt="dbf92c064da303261fc263ba466d74cf.png"></p>
 <p>通过 Dump 文件，可以发现线程池的线程都在 MainTest 的第 30 行上 parking ，处于等待状态：</p>
-<p><img src="en-resource://database/738:0" alt="33a7c22a3d889488db9033f6166a7b16.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/spNd8mRrJB5GHMT.png" alt="33a7c22a3d889488db9033f6166a7b16.png"></p>
 <p>那么第 30 行是啥玩意？</p>
-<p><img src="en-resource://database/740:0" alt="70b146422b8b59b0968132b017f66e18.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/3CSH7RdcJWifwmZ.png" alt="70b146422b8b59b0968132b017f66e18.png"></p>
 <p>这行代码在干啥？</p>
 <blockquote>
 <p>countDownLatchSub.await();</p>
 </blockquote>
 <p>是父任务在等待子任务执行结束，运行 finally 代码，把 countDownLatchSub 的计数 countDown 到 0，才会继续执行：</p>
-<p><img src="en-resource://database/742:0" alt="80c679842aebbf34d460772fb83725b9.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/pMR4fgDHAJv6BTd.png" alt="80c679842aebbf34d460772fb83725b9.png"></p>
 <p>所以现在的现象就是子任务的 countDownLatchSub 把父任务的拦住了。</p>
 <p>换句话说就是父任务被拦住是因为子任务的 finally 代码中的 countDownLatchSub.countDown() 方法没有被执行。</p>
 <p>好，那么最关键的问题就来了：为什么没有执行？</p>
 <p>你先别往下看，闭上眼睛在你的小脑瓜子里面推演一下，琢磨一下：finally 为什么没有执行？</p>
-<p><img src="en-resource://database/744:0" alt="d7ef083a6300f875f100b1d7da30b6ad.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/Q8XZNfd27lirqjs.png" alt="d7ef083a6300f875f100b1d7da30b6ad.png"></p>
 <p>或者再换个更加接近真实的问题：子任务为什么没有执行？</p>
 <p>这个点，非常简单，可以说一点就破。</p>
 <p>琢磨明白了，这个坑的原理摸摸清楚了。</p>
@@ -2483,7 +2483,7 @@ e2.hash &amp; newCap-1
 <p>…</p>
 <p>…</p>
 <p>琢磨明白了吗？你就刷刷往下看？</p>
-<p><img src="en-resource://database/746:0" alt="8d6a12da7c8c6403ec9e19cb3fda33dd.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/5pzlTR6QaADLmsY.png" alt="8d6a12da7c8c6403ec9e19cb3fda33dd.png"></p>
 <p>没明白我再给你一个信息：需要结合线程池的参数和运行原理来分析。</p>
 <p>什么？</p>
 <p>你说线程池的运行原理你不清楚？</p>
@@ -2494,7 +2494,7 @@ e2.hash &amp; newCap-1
 <p>好，不管你“恍然大悟”了没有。</p>
 <p>让你知道“一点就破”这四个是怎么回事儿。</p>
 <p>首先，我们把目光聚焦在线程池这里：</p>
-<p><img src="en-resource://database/748:0" alt="071ef3a06e1a425f9883ddf1522aa58c.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/m5axC7OkjG6QSUg.png" alt="071ef3a06e1a425f9883ddf1522aa58c.png"></p>
 <p>这个线程池核心线程数是 3，但是我们要提交 5 个任务到线程池去。</p>
 <p>父任务哐哐哐，就把核心线程数占满了。</p>
 <p>接下来子任务也要往这个线程池提交任务怎么办？</p>
@@ -2502,7 +2502,7 @@ e2.hash &amp; newCap-1
 <p>一进队列，就完犊子。</p>
 <p>到这里，我觉得你应该能想明白问题了。</p>
 <p>应该给到我一个恍然大悟的表情，并配上“哦哦哦~”这样的内心 OS。</p>
-<p><img src="en-resource://database/750:0" alt="547761cceb36e0ee84c7f280cd01dc45.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/iUb65g2V9NpjnEK.png" alt="547761cceb36e0ee84c7f280cd01dc45.png"></p>
 <p><strong>你想想，父任务这个时候干啥？</strong></p>
 <p>是不是等在 countDownLatchSub.await() 这里。</p>
 <p>而 countDownLatchSub.await() 什么时候能继续执行？</p>
@@ -2522,7 +2522,7 @@ e2.hash &amp; newCap-1
 <p>闭环了，相互等待了，家人们。</p>
 <p>这，就是坑。</p>
 <p>现在把坑的原理摸清楚了，我在给你说一下真实的线上场景踩到这个坑是怎么样的呢？</p>
-<p><img src="en-resource://database/752:0" alt="729ba8d23d1540c36531f680ff4ee960.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/ld3hLgPxz2qZWMa.png" alt="729ba8d23d1540c36531f680ff4ee960.png"></p>
 <p>上游发起请求到微服务 A 的接口 1，该接口需要调用微服务 B 的接口 2。</p>
 <p>但是微服务 B 的接口 2，需要从微服务 A 接口 3 获取数据。</p>
 <p>然而在微服务 A 内部，全局使用的是同一个自定义线程池。</p>
@@ -2533,9 +2533,9 @@ e2.hash &amp; newCap-1
 <p>所以就踩到了这个坑。</p>
 <h2 id="怎么避免"><a href="#怎么避免" class="headerlink" title="怎么避免"></a>怎么避免</h2><p>找到了坑的原因，解决方案就随之而出了。</p>
 <p>父子任务不要共用一个线程池，给子任务也搞一个自定义线程池就可以了：</p>
-<p><img src="en-resource://database/754:0" alt="7c159cd6f108dc89e1007c2b1e1bb392.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/HlYndOUheXMx4Wc.png" alt="7c159cd6f108dc89e1007c2b1e1bb392.png"></p>
 <p>运行起来看看日志：</p>
-<p><img src="en-resource://database/756:0" alt="1e294ad02633583a8d3a906351f9eafd.png"></p>
+<p><img src="https://s2.loli.net/2024/09/03/AIVlfzNvxqgDQur.png" alt="1e294ad02633583a8d3a906351f9eafd.png"></p>
 <p>首先整体运行时间只需要 2s 了，达到了我想要的效果。</p>
 <p>另外，我们观察一个具体的任务：</p>
 <figure class="highlight subunit"><table><tr><td class="code"><pre><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】开始执行--- </span><br><span class="line">当前线程pool<span class="string">-2</span>-thread<span class="string">-1</span>,【任务2】开始处理数据=1 </span><br><span class="line">当前线程pool<span class="string">-2</span>-thread<span class="string">-4</span>,【任务2】开始处理数据=2 </span><br><span class="line">当前线程pool<span class="string">-1</span>-thread<span class="string">-3</span>,---【任务2】执行完成---</span><br></pre></td></tr></table></figure>
