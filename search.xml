@@ -462,227 +462,6 @@
       </tags>
   </entry>
   <entry>
-    <title>Mysql</title>
-    <url>/2021/04/07/Mysql/</url>
-    <content><![CDATA[<h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>今天不整那些花里胡哨、虚头巴脑的前言了，直接进入正题怼起来。</p>
-<span id="more"></span>
-<blockquote>
-<p>常见的索引类型有哪些？</p>
-</blockquote>
-<p>常见的索引类型有：hash、b树、b+树。</p>
-<p>hash：底层就是 hash 表。进行查找时，根据 key 调用hash 函数获得对应的 hashcode，根据 hashcode 找到对应的数据行地址，根据地址拿到对应的数据。</p>
-<p>B树：B树是一种多路搜索树，n 路搜索树代表每个节点最多有 n 个子节点。每个节点存储 key + 指向下一层节点的指针+ 指向 key 数据记录的地址。查找时，从根结点向下进行查找，直到找到对应的key。</p>
-<p>B+树：B+树是b树的变种，主要区别在于：B+树的非叶子节点只存储 key + 指向下一层节点的指针。另外，B+树的叶子节点之间通过指针来连接，构成一个有序链表，因此对整棵树的遍历只需要一次线性遍历叶子结点即可。</p>
-<blockquote>
-<p>为什么MySQL数据库要用B+树存储索引？而不用红黑树、Hash、B树？</p>
-</blockquote>
-<p>红黑树：如果在内存中，红黑树的查找效率比B树更高，但是涉及到磁盘操作，B树就更优了。因为红黑树是二叉树，数据量大时树的层数很高，从树的根结点向下寻找的过程，每读1个节点，都相当于一次IO操作，因此红黑树的I/O操作会比B树多的多。</p>
-<p>hash 索引：如果只查询单个值的话，hash 索引的效率非常高。但是 hash 索引有几个问题：1）不支持范围查询；2）不支持索引值的排序操作；3）不支持联合索引的最左匹配规则。</p>
-<p>B树索引：B树索相比于B+树，在进行范围查询时，需要做局部的中序遍历，可能要跨层访问，跨层访问代表着要进行额外的磁盘I/O操作；另外，B树的非叶子节点存放了数据记录的地址，会导致存放的节点更少，树的层数变高</p>
-<blockquote>
-<p>MySQL 中的索引叶子节点存放的是什么？</p>
-</blockquote>
-<p>MyISAM和InnoDB都是采用的B+树作为索引结构，但是叶子节点的存储上有些不同。</p>
-<p>MyISAM：主键索引和辅助索引（普通索引）的叶子节点都是存放 key 和 key 对应数据行的地址。在MyISAM 中，主键索引和辅助索引没有任何区别。</p>
-<p>InnoDB：主键索引存放的是 key 和 key 对应的数据行。辅助索引存放的是 key 和 key 对应的主键值。因此在使用辅助索引时，通常需要检索两次索引，首先检索辅助索引获得主键值，然后用主键值到主键索引中检索获得记录。</p>
-<blockquote>
-<p>什么是聚簇索引（聚集索引）？</p>
-</blockquote>
-<p>聚簇索引并不是一种单独的索引类型，而是一种数据存储方式。聚簇索引将索引和数据行放到了一块，找到索引也就找到了数据。因为无需进行回表操作，所以效率很高。</p>
-<p>InnoDB 中必然会有，且只会有一个聚簇索引。通常是主键，如果没有主键，则优先选择非空的唯一索引，如果唯一索引也没有，则会创建一个隐藏的row_id 作为聚簇索引。至于为啥会只有一个聚簇索引，其实很简单，因为我们的数据只会存储一份。</p>
-<p>而非聚簇索引则将数据存储和索引分开，找到索引后，需要通过对应的地址找到对应的数据行。MyISAM 的索引方式就是非聚簇索引。</p>
-<blockquote>
-<p>什么是回表查询？</p>
-</blockquote>
-<p>InnoDB 中，对于主键索引，只需要走一遍主键索引的查询就能在叶子节点拿到数据。</p>
-<p>而对于普通索引，叶子节点存储的是 key + 主键值，因此需要再走一次主键索引，通过主键索引找到行记录，这就是所谓的回表查询，先定位主键值，再定位行记录。</p>
-<blockquote>
-<p>走普通索引，一定会出现回表查询吗？</p>
-</blockquote>
-<p>不一定，如果查询语句所要求的字段全部命中了索引，那么就不必再进行回表查询。</p>
-<p>很容易理解，有一个 user 表，主键为 id，name 为普通索引，则再执行：select id, name from user where name = ‘joonwhee’ 时，通过name 的索引就能拿到 id 和 name了，因此无需再回表去查数据行了。</p>
-<blockquote>
-<p>什么是覆盖索引（索引覆盖）吗？</p>
-</blockquote>
-<p>覆盖索引是 SQL-Server 中的一种说法，上面讲的例子其实就实现了覆盖索引。具体的：当索引上包含了查询语句中的所有列时，我们无需进行回表查询就能拿到所有的请求数据，因此速度会很快。</p>
-<p>当explain的输出结果Extra字段为Using index时，则代表触发覆盖索引。以上面的例子为例：<br><img src="https://i.loli.net/2021/04/07/jglpJaW9k7oQSh1.png" alt="mysql1"></p>
-<blockquote>
-<p>联合索引（复合索引）的底层实现？最佳左前缀原则？</p>
-</blockquote>
-<p>联合索引底层还是使用B+树索引，并且还是只有一棵树，只是此时的排序会：首先按照第一个索引排序，在第一个索引相同的情况下，再按第二个索引排序，依次类推。</p>
-<p>这也是为什么有“最佳左前缀原则”的原因，因为右边（后面）的索引都是在左边（前面）的索引排序的基础上进行排序的，如果没有左边的索引，单独看右边的索引，其实是无序的。</p>
-<p>还是以字典为例，我们如果要查第2个字母为 k 的，通过目录是无法快速找的，因为首字母 A - Z 里面都可能包含第2个字母为 k 的。</p>
-<p>联合索引的索引字段中有一个值为null，则将其放在叶子节点的最前面；可以认为null值是最小的。<br><img src="https://i.loli.net/2021/04/07/71NCPRvTEgWlIib.png" alt="mysql2"></p>
-<blockquote>
-<p>union 和 union all 的区别</p>
-</blockquote>
-<p>union all：对两个结果集直接进行并集操作，记录可能有重复，不会进行排序。</p>
-<p>union：对两个结果集进行并集操作，会进行去重，记录不会重复，按字段的默认规则排序。</p>
-<p>因此，从效率上说，UNION ALL 要比 UNION 更快。</p>
-<blockquote>
-<p>B+树中一个节点到底多大合适？</p>
-</blockquote>
-<p>1页或页的倍数最为合适。因为如果一个节点的大小小于1页，那么读取这个节点的时候其实也会读出1页，造成资源的浪费。所以为了不造成浪费，所以最后把一个节点的大小控制在1页、2页、3页等倍数页大小最为合适。</p>
-<p>这里说的“页”是 MySQL 自定义的单位（和操作系统类似），MySQL 的 Innodb 引擎中1页的默认大小是16k，可以使用命令SHOW GLOBAL STATUS LIKE ‘Innodb_page_size’ 查看。<br><img src="https://i.loli.net/2021/04/07/JC3QLf28KgiUmV7.png" alt="mysql3"></p>
-<blockquote>
-<p>MySQL 中B+树的一个节点大小为多大呢？</p>
-</blockquote>
-<p>在 MySQL 中 B+ 树的一个节点大小为“1页”，也就是16k。</p>
-<p>Innodb中，B+树中的一个节点存储的内容是：<br>非叶子节点：key + 指针<br>叶子节点：数据行（key 通常是数据的主键）</p>
-<p>对于叶子节点：我们假设1行数据大小为1k（对于普通业务绝对够了），那么1页能存16条数据。</p>
-<p>对于非叶子节点：key 使用 bigint 则为8字节，指针在 MySQL 中为6字节，一共是14字节，则16k能存放 16 * 1024 / 14 = 1170个。那么一颗高度为3的B+树能存储的数据为：1170 * 1170 * 16 = 21902400（千万级）。</p>
-<p>所以在 InnoDB 中B+树高度一般为3层时，就能满足千万级的数据存储。在查找数据时一次页的查找代表一次IO，所以通过主键索引查询通常只需要1-3次 IO 操作即可查找到数据。千万级别对于一般的业务来说已经足够了，所以一个节点为1页，也就是16k是比较合理的。</p>
-<blockquote>
-<p>什么是 Buffer Pool？</p>
-</blockquote>
-<p>Buffer Pool 是 InnoDB 维护的一个缓存区域，用来缓存数据和索引在内存中，主要用来加速数据的读写，如果 Buffer Pool 越大，那么 MySQL 就越像一个内存数据库，默认大小为 128M。</p>
-<p>InnoDB 会将那些热点数据和一些 InnoDB 认为即将访问到的数据存在 Buffer Pool 中，以提升数据的读取性能。</p>
-<p>InnoDB 在修改数据时，如果数据的页在 Buffer Pool 中，则会直接修改 Buffer Pool，此时我们称这个页为脏页，InnoDB 会以一定的频率将脏页刷新到磁盘，这样可以尽量减少磁盘I/O，提升性能。</p>
-<blockquote>
-<p>InnoDB 四大特性</p>
-</blockquote>
-<p>插入缓冲（insert buffer）：<br>索引是存储在磁盘上的，所以对于索引的操作需要涉及磁盘操作。如果我们使用自增主键，那么在插入主键索引（聚簇索引）时，只需不断追加即可，不需要磁盘的随机 I/O。但是如果我们使用的是普通索引，大概率是无序的，此时就涉及到磁盘的随机 I/O，而随机I/O的性能是比较差的（Kafka 官方数据：磁盘顺序I/O的性能是磁盘随机I/O的4000~5000倍）。</p>
-<p>因此，InnoDB 存储引擎设计了 Insert Buffer ，对于非聚集索引的插入或更新操作，不是每一次直接插入到索引页中，而是先判断插入的非聚集索引页是否在缓冲池（Buffer pool）中，若在，则直接插入；若不在，则先放入到一个 Insert Buffer 对象中，然后再以一定的频率和情况进行 Insert Buffer 和辅助索引页子节点的 merge（合并）操作，这时通常能将多个插入合并到一个操作中（因为在一个索引页中），这就大大提高了对于非聚集索引插入的性能。</p>
-<p>插入缓冲的使用需要满足以下两个条件：1）索引是辅助索引；2）索引不是唯一的。</p>
-<p>二次写（double write）：<br>脏页刷盘风险：InnoDB 的 page size一般是16KB，操作系统写文件是以4KB作为单位，那么每写一个 InnoDB 的 page 到磁盘上，操作系统需要写4个块。于是可能出现16K的数据，写入4K 时，发生了系统断电或系统崩溃，只有一部分写是成功的，这就是 partial page write（部分页写入）问题。这时会出现数据不完整的问题。</p>
-<p>这时是无法通过 redo log 恢复的，因为 redo log 记录的是对页的物理修改，如果页本身已经损坏，重做日志也无能为力。</p>
-<p>doublewrite 就是用来解决该问题的。doublewrite 由两部分组成，一部分为内存中的 doublewrite buffer，其大小为2MB，另一部分是磁盘上共享表空间中连续的128个页，即2个区(extent)，大小也是2M。</p>
-<p>为了解决 partial page write 问题，当 MySQL 将脏数据刷新到磁盘的时候，会进行以下操作：</p>
-<p>1）先将脏数据复制到内存中的 doublewrite buffer</p>
-<p>2）之后通过 doublewrite buffer 再分2次，每次1MB写入到共享表空间的磁盘上（顺序写，性能很高）</p>
-<p>3）完成第二步之后，马上调用 fsync 函数，将doublewrite buffer中的脏页数据写入实际的各个表空间文件（离散写）。</p>
-<p>如果操作系统在将页写入磁盘的过程中发生崩溃，InnoDB 再次启动后，发现了一个 page 数据已经损坏，InnoDB 存储引擎可以从共享表空间的 doublewrite 中找到该页的一个最近的副本，用于进行数据恢复了。</p>
-<p>自适应哈希索引(adaptive hash index):<br>哈希（hash）是一种非常快的查找方法，一般情况下查找的时间复杂度为 O(1)。但是由于不支持范围查询等条件的限制，InnoDB 并没有采用 hash 索引，但是如果能在一些特殊场景下使用 hash 索引，则可能是一个不错的补充，而 InnoDB 正是这么做的。</p>
-<p>具体的，InnoDB 会监控对表上索引的查找，如果观察到某些索引被频繁访问，索引成为热数据，建立哈希索引可以带来速度的提升，则建立哈希索引，所以称之为自适应（adaptive）的。自适应哈希索引通过缓冲池的 B+ 树构造而来，因此建立的速度很快。而且不需要将整个表都建哈希索引，InnoDB 会自动根据访问的频率和模式来为某些页建立哈希索引。</p>
-<p>预读（read ahead）：<br>InnoDB 在 I/O 的优化上有个比较重要的特性为预读，当 InnoDB 预计某些 page 可能很快就会需要用到时，它会异步地将这些 page 提前读取到缓冲池（buffer pool）中，这其实有点像空间局部性的概念。</p>
-<p>空间局部性（spatial locality）：如果一个数据项被访问，那么与他地址相邻的数据项也可能很快被访问。</p>
-<p>InnoDB使用两种预读算法来提高I/O性能：线性预读（linear read-ahead）和随机预读（randomread-ahead）。</p>
-<p>其中，线性预读以 extent（块，1个 extent 等于64个 page）为单位，而随机预读放到以 extent 中的 page 为单位。线性预读着眼于将下一个extent 提前读取到 buffer pool 中，而随机预读着眼于将当前 extent 中的剩余的 page 提前读取到 buffer pool 中。</p>
-<p>线性预读（Linear read-ahead）：线性预读方式有一个很重要的变量 innodb_read_ahead_threshold，可以控制 Innodb 执行预读操作的触发阈值。如果一个 extent 中的被顺序读取的 page 超过或者等于该参数变量时，Innodb将会异步的将下一个 extent 读取到 buffer pool中，innodb_read_ahead_threshold 可以设置为0-64（一个 extend 上限就是64页）的任何值，默认值为56，值越高，访问模式检查越严格。<br> <br>随机预读（Random read-ahead）: 随机预读方式则是表示当同一个 extent 中的一些 page 在 buffer pool 中发现时，Innodb 会将该 extent 中的剩余 page 一并读到 buffer pool中，由于随机预读方式给 Innodb code 带来了一些不必要的复杂性，同时在性能也存在不稳定性，在5.5中已经将这种预读方式废弃。要启用此功能，请将配置变量设置 innodb_random_read_ahead 为ON</p>
-<blockquote>
-<p>共享锁和排他锁？</p>
-</blockquote>
-<p>共享锁又称为读锁，简称S锁，顾名思义，共享锁就是多个事务对于同一数据可以共享一把锁，都能访问到数据，但是只能读不能修改。<br> <br>排他锁又称为写锁，简称X锁，顾名思义，排他锁就是不能与其他锁并存，如一个事务获取了一个数据行的排他锁，其他事务就不能再获取该行的其他锁，包括共享锁和排他锁，但是获取排他锁的事务可以对数据就行读取和修改。</p>
-<p>常见的几种 SQL 语句的加锁情况如下：</p>
-<p>select * from table：不加锁</p>
-<p>update/insert/delete：排他锁</p>
-<p>select * from table where id = 1 for update：id为索引，加排他锁</p>
-<p>select * from table where id = 1 lock in share mode：id为索引，加共享锁</p>
-<blockquote>
-<p>数据库的行锁和表锁</p>
-</blockquote>
-<p>行锁：操作时只锁某一（些）行，不对其它行有影响。开销大，加锁慢；会出现死锁；锁定粒度小，发生锁冲突的概率低，并发度高。</p>
-<p>表锁：即使操作一条记录也会锁住整个表。开销小，加锁快；不会出现死锁；锁定粒度大，发生锁冲突概率高，并发度最低。</p>
-<p>页锁：操作时锁住一页数据（16kb）。开销和加锁速度介于表锁和行锁之间；会出现死锁；锁定粒度介于表锁和行锁之间，并发度一般。</p>
-<p>InnoDB 有行锁和表锁，MyIsam 只有表锁。</p>
-<blockquote>
-<p>InnoDB 的行锁是怎么实现的？</p>
-</blockquote>
-<p>InnoDB 行锁是通过索引上的索引项来实现的。意味者：只有通过索引条件检索数据，InnoDB 才会使用行级锁，否则，InnoDB将使用表锁！</p>
-<p>对于主键索引：直接锁住锁住主键索引即可。</p>
-<p>对于普通索引：先锁住普通索引，接着锁住主键索引，这是因为一张表的索引可能存在多个，通过主键索引才能确保锁是唯一的，不然如果同时有2个事务对同1条数据的不同索引分别加锁，那就可能存在2个事务同时操作一条数据了。</p>
-<blockquote>
-<p>InnoDB 锁的算法有哪几种？</p>
-</blockquote>
-<p>Record lock：记录锁，单条索引记录上加锁，锁住的永远是索引，而非记录本身。</p>
-<p>Gap lock：间隙锁，在索引记录之间的间隙中加锁，或者是在某一条索引记录之前或者之后加锁，并不包括该索引记录本身。</p>
-<p>Next-key lock：Record lock 和 Gap lock 的结合，即除了锁住记录本身，也锁住索引之间的间隙。</p>
-<blockquote>
-<p>MySQL 如何实现悲观锁和乐观锁？</p>
-</blockquote>
-<p>乐观锁：更新时带上版本号（cas更新）</p>
-<p>悲观锁：使用共享锁和排它锁，select…lock in share mode，select…for update。</p>
-<blockquote>
-<p>存储引擎的选择？</p>
-</blockquote>
-<p>没有特殊情况，使用 InnoDB 即可。如果表中绝大多数都只是读查询，可以考虑 MyISAM</p>
-<blockquote>
-<p>如何做慢 SQL 优化？</p>
-</blockquote>
-<p>首先要搞明白慢的原因是什么：是查询条件没有命中索引？还是 load 了不需要的数据列？还是数据量太大？所以优化也是针对这三个方向来的。</p>
-<p>首先用 explain 分析语句的执行计划，查看使用索引的情况，是不是查询没走索引，如果可以加索引解决，优先采用加索引解决。</p>
-<p>分析语句，看看是否存在一些导致索引失效的用法，是否 load 了额外的数据，是否加载了许多结果中并不需要的列，对语句进行分析以及重写。</p>
-<p>如果对语句的优化已经无法进行，可以考虑表中的数据量是否太大，如果是的话可以进行垂直拆分或者水平拆分。</p>
-<blockquote>
-<p>说说 MySQL 的主从复制？</p>
-</blockquote>
-<p>MySQL主从复制涉及到三个线程，一个运行在主节点（Log Dump Thread），其余两个（I/O Thread，SQL Thread）运行在从节点，如下图所示<br><img src="https://i.loli.net/2021/04/07/2RsFWgJEc1qIXMt.jpg" alt="mysql4"></p>
-<p>主从复制默认是异步的模式，具体过程如下。</p>
-<p>1）从节点上的I/O 线程连接主节点，并请求从指定日志文件（bin log file）的指定位置（bin log position，或者从最开始的日志）之后的日志内容；</p>
-<p>2）主节点接收到来自从节点的 I/O请求后，读取指定文件的指定位置之后的日志信息，返回给从节点。返回信息中除了日志所包含的信息之外，还包括本次返回的信息的 bin-log file 以及 bin-log position；从节点的 I/O 进程接收到内容后，将接收到的日志内容更新到 relay log 中，并将读取到的 bin log file（文件名）和position（位置）保存到 master-info 文件中，以便在下一次读取的时候能够清楚的告诉 Master “我需要从某个bin-log 的哪个位置开始往后的日志内容”；</p>
-<p>3）从节点的 SQL 线程检测到 relay-log 中新增加了内容后，会解析 relay-log 的内容，并在本数据库中执行。</p>
-<blockquote>
-<p>异步复制，主库宕机后，数据可能丢失？</p>
-</blockquote>
-<p>可以使用半同步复制或全同步复制。</p>
-<p>半同步复制：</p>
-<p>修改语句写入bin log后，不会立即给客户端返回结果。而是首先通过log dump 线程将 binlog 发送给从节点，从节点的 I/O 线程收到 binlog 后，写入到 relay log，然后返回 ACK 给主节点，主节点 收到 ACK 后，再返回给客户端成功。<br><img src="https://i.loli.net/2021/04/07/BtCMYiDuhXUSyGx.jpg" alt="mysql5"></p>
-<p>半同步复制的特点：</p>
-<p>确保事务提交后 binlog 至少传输到一个从库</p>
-<p>不保证从库应用完这个事务的 binlog</p>
-<p>性能有一定的降低，响应时间会更长</p>
-<p>网络异常或从库宕机，卡主主库，直到超时或从库恢复</p>
-<p>全同步复制：主节点和所有从节点全部执行了该事务并确认才会向客户端返回成功。因为需要等待所有从库执行完该事务才能返回，所以全同步复制的性能必然会收到严重的影响。</p>
-<blockquote>
-<p>主库写压力大，从库复制很可能出现延迟？</p>
-</blockquote>
-<p>可以使用并行复制（并行是指从库多个SQL线程并行执行 relay log），解决从库复制延迟的问题。</p>
-<p>MySQL 5.7 中引入基于组提交的并行复制，其核心思想：一个组提交的事务都是可以并行回放，因为这些事务都已进入到事务的 prepare 阶段，则说明事务之间没有任何冲突（否则就不可能提交）。</p>
-<p>判断事务是否处于一个组是通过 last_committed 变量，last_committed 表示事务提交的时候，上次事务提交的编号，如果事务具有相同的 last_committed，则表示这些事务都在一组内，可以进行并行的回放。</p>
-<blockquote>
-<p>MySQL 的事务隔离级别有哪些？分别用于解决什么问题？</p>
-</blockquote>
-<p>主要用于解决脏读、不可重复读、幻读。</p>
-<p>脏读：一个事务读取到另一个事务还未提交的数据。</p>
-<p>不可重复读：在一个事务中多次读取同一个数据时，结果出现不一致。</p>
-<p>幻读：在一个事务中使用相同的 SQL 两次读取，第二次读取到了其他事务新插入的行。</p>
-<p>不可重复读注重于数据的修改，而幻读注重于数据的插入。<br><img src="https://i.loli.net/2021/04/07/SiyrkGcJj2ZChFa.png" alt="mysql5"></p>
-<blockquote>
-<p>MySQL 的可重复读怎么实现的？</p>
-</blockquote>
-<p>使用 MVCC 实现的，即 Mutil-Version Concurrency Control，多版本并发控制。关于 MVCC，比较常见的说法如下，包括《高性能 MySQL》也是这么介绍的。</p>
-<p>InnoDB 在每行记录后面保存两个隐藏的列，分别保存了数据行的创建版本号和删除版本号。每开始一个新的事务，系统版本号都会递增。事务开始时刻的版本号会作为事务的版本号，用来和查询到的每行记录的版本号对比。在可重复读级别下，MVCC是如何操作的：</p>
-<p>SELECT：必须同时满足以下两个条件，才能查询到。1）只查版本号早于当前版本的数据行；2）行的删除版本要么未定义，要么大于当前事务版本号。</p>
-<p>INSERT：为插入的每一行保存当前系统版本号作为创建版本号。</p>
-<p>DELETE：为删除的每一行保存当前系统版本号作为删除版本号。</p>
-<p>UPDATE：插入一条新数据，保存当前系统版本号作为创建版本号。同时保存当前系统版本号作为原来的数据行删除版本号。</p>
-<p>MVCC 只作用于 RC（Read Committed）和 RR（Repeatable Read）级别，因为 RU（Read Uncommitted）总是读取最新的数据版本，而不是符合当前事务版本的数据行。而 Serializable 则会对所有读取的行都加锁。这两种级别都不需要 MVCC 的帮助。</p>
-<p>实际上，InnoDB 会在每行记录后面增加三个隐藏字段：</p>
-<p>DB_ROW_ID：行ID，随着插入新行而单调递增，如果有主键，则不会包含该列。</p>
-<p>DB_TRX_ID：记录插入或更新该行的事务的事务ID。</p>
-<p>DB_ROLL_PTR：回滚指针，指向 undo log 记录。每次对某条记录进行改动时，该列会存一个指针，可以通过这个指针找到该记录修改前的信息 。当某条记录被多次修改时，该行记录会存在多个版本，通过DB_ROLL_PTR 链接形成一个类似版本链的概念。<br><img src="https://i.loli.net/2021/04/07/njgr1FOEfkw5A9e.png" alt="mysql6"></p>
-<p>接下来进入正题，以 RR 级别为例：每开启一个事务时，系统会给该事务会分配一个事务 Id，在该事务执行第一个 select 语句的时候，会生成一个当前时间点的事务快照 ReadView，主要包含以下几个属性：</p>
-<p>trx_ids：生成 ReadView 时当前系统中活跃的事务 Id 列表，就是还未执行事务提交的。</p>
-<p>up_limit_id：低水位，取 trx_ids 中最小的那个，trx_id 小于该值都能看到。</p>
-<p>low_limit_id：高水位，生成 ReadView 时系统将要分配给下一个事务的id值，trx_id 大于等于该值都不能看到。</p>
-<p>creator_trx_id：生成该 ReadView 的事务的事务 Id。</p>
-<p>有了这个ReadView，这样在访问某条记录时，只需要按照下边的步骤判断记录的某个版本是否可见：</p>
-<p>1）如果被访问版本的trx_id与ReadView中的creator_trx_id值相同，意味着当前事务在访问它自己修改过的记录，所以该版本可以被当前事务访问。</p>
-<p>2）如果被访问版本的trx_id小于ReadView中的up_limit_id值，表明生成该版本的事务在当前事务生成ReadView前已经提交，所以该版本可以被当前事务访问。</p>
-<p>3）如果被访问版本的trx_id大于ReadView中的low_limit_id值，表明生成该版本的事务在当前事务生成ReadView后才开启，所以该版本不可以被当前事务访问。</p>
-<p>4）如果被访问版本的trx_id属性值在ReadView的up_limit_id和low_limit_id之间，那就需要判断一下trx_id属性值是不是在trx_ids列表中。如果在，说明创建ReadView时生成该版本的事务还是活跃的，该版本不可以被访问；如果不在，说明创建ReadView时生成该版本的事务已经被提交，该版本可以被访问。</p>
-<p>在进行判断时，首先会拿记录的最新版本来比较，如果该版本无法被当前事务看到，则通过记录的 DB_ROLL_PTR 找到上一个版本，重新进行比较，直到找到一个能被当前事务看到的版本。</p>
-<p>而对于删除，其实就是一种特殊的更新，InnoDB 用一个额外的标记位 delete_bit 标识是否删除。当我们在进行判断时，会检查下 delete_bit 是否被标记，如果是，则跳过该版本，通过 DB_ROLL_PTR 拿到下一个版本进行判断。</p>
-<p>以上内容是对于 RR 级别来说，而对于 RC 级别，其实整个过程几乎一样，唯一不同的是生成 ReadView 的时机，RR 级别只在事务开始时生成一次，之后一直使用该 ReadView。而 RC 级别则在每次 select 时，都会生成一个 ReadView。</p>
-<blockquote>
-<p>那 MVCC 解决了幻读了没有？</p>
-</blockquote>
-<p>对于快照读，MVCC 因为因为从 ReadView 读取，所以必然不会看到新插入的行，所以天然就解决了幻读的问题。</p>
-<p>而对于当前读的幻读，MVCC 是无法解决的。需要使用 Gap Lock 或 Next-Key Lock（Gap Lock + Record Lock）来解决。</p>
-<p>其实原理也很简单，用上面的例子稍微修改下以触发当前读：select * from user where id &lt; 10 for update，当使用了 Gap Lock 时，Gap 锁会锁住 id &lt; 10 的整个范围，因此其他事务无法插入 id &lt; 10 的数据，从而防止了幻读。</p>
-<blockquote>
-<p>那经常有人说 Repeatable Read 解决了幻读是什么情况？</p>
-</blockquote>
-<p>SQL 标准中规定的 RR 并不能消除幻读，但是 MySQL 的 RR 可以，靠的就是 Gap 锁。在 RR 级别下，Gap 锁是默认开启的，而在 RC 级别下，Gap 锁是关闭的。</p>
-]]></content>
-      <categories>
-        <category>技术</category>
-      </categories>
-      <tags>
-        <tag>Mysql</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>Spring IoC 核心流程介绍</title>
     <url>/2021/04/23/Spring-IoC-%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B%E4%BB%8B%E7%BB%8D/</url>
     <content><![CDATA[<h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>本文将用最通俗易懂的文字介绍 Spring IoC 中的核心流程，主要用于帮助初学者快速了解 IoC 的核心流程，也可以用作之前源码分析文章的总结。本着简单的初衷，本文会省略掉大量流程，只介绍最重要的步骤。</p>
@@ -2557,6 +2336,698 @@ e2.hash &amp; newCap-1
       <tags>
         <tag>多线程</tag>
         <tag>八股文</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>一个 SpringBoot 项目能同时处理多少请求？</title>
+    <url>/2024/09/07/%E4%B8%80%E4%B8%AASpring%20Boot%E5%8F%AF%E4%BB%A5%E5%A4%84%E7%90%86%E5%A4%9A%E5%B0%91%E4%B8%AA%E8%AF%B7%E6%B1%82%EF%BC%9F/</url>
+    <content><![CDATA[<p>一个 SpringBoot 项目能同时处理多少请求？</p>
+<p>不知道你听到这个问题之后的第一反应是什么。</p>
+<p>我大概知道他要问的是哪个方向，但是对于这种只有一句话的面试题，我的第一反应是：会不会有坑？</p>
+<p>所以并不会贸然答题，先追问一些消息，比如：这个项目具体是干什么的？项目大概进行了哪些参数配置？使用的 web 容器是什么？部署的服务器配置如何？有哪些接口？接口响应平均时间大概是多少？</p>
+<p>这样，在几个问题的拉扯之后，至少在面试题考察的方向方面能基本和面试官达成了一致。</p>
+<p>比如前面的面试问题，经过几次拉扯之后，面试官可能会修改为：</p>
+<blockquote>
+<p>一个 SpringBoot 项目，未进行任何特殊配置，全部采用默认设置，这个项目同一时刻，最多能同时处理多少请求？</p>
+</blockquote>
+<p>能处理多少呢？</p>
+<p>我也不知道，但是当问题变成上面这样之后，我找到了探索答案的角度。</p>
+<p>既然“未进行任何特殊配置”，那我自己搞个 Demo 出来，压一把不就完事了吗？</p>
+<p>坐稳扶好，准备发车。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716173852.png" alt="img"></p>
+<h2 id="Demo"><a href="#Demo" class="headerlink" title="Demo"></a><strong>Demo</strong></h2><p>小手一抖，先搞个 Demo 出来。</p>
+<p>这个 Demo 非常的简单，就是通过 idea 创建一个全新的 SpringBoot 项目就行。</p>
+<p><strong>我的 SpringBoot 版本使用的是 2.7.13。</strong></p>
+<p>整个项目只有这两个依赖：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716105209.png" alt="img"></p>
+<p>整个项目也只有两个类，要得就是一个空空如也，一清二白。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716104148.png" alt="img"></p>
+<p>项目中的 TestController，里面只有一个 getTest 方法，用来测试，方法里面接受到请求之后直接 sleep 一小时。</p>
+<p>目的就是直接把当前请求线程占着，这样我们才能知道项目中一共有多少个线程可以使用：</p>
+<figure class="highlight less"><table><tr><td class="code"><pre><span class="line"><span class="variable">@Slf4j</span></span><br><span class="line"><span class="variable">@RestController</span></span><br><span class="line">public class TestController &#123;</span><br><span class="line"></span><br><span class="line">    <span class="variable">@GetMapping</span>(<span class="string">&quot;/getTest&quot;</span>)</span><br><span class="line">    public void <span class="built_in">getTest</span>(int num) throws Exception &#123;</span><br><span class="line">        <span class="selector-tag">log</span><span class="selector-class">.info</span>(<span class="string">&quot;&#123;&#125; 接受到请求:num=&#123;&#125;&quot;</span>, Thread.<span class="built_in">currentThread</span>().<span class="built_in">getName</span>(), num);</span><br><span class="line">        <span class="selector-tag">TimeUnit</span><span class="selector-class">.HOURS</span><span class="selector-class">.sleep</span>(<span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>项目中的 application.properties 文件也是空的：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716104407.png" alt="img"></p>
+<p>这样，一个“未进行任何特殊配置”的 SpringBoot 不就有了吗？</p>
+<p>基于这个 Demo，前面的面试题就要变成了：我短时间内不断的调用这个 Demo 的 getTest 方法，最多能调用多少次？</p>
+<p>问题是不是又变得更加简单了一点？</p>
+<p>那么前面这个“短时间内不断的调用”，用代码怎么表示呢？</p>
+<p>很简单，就是在循环中不断的进行接口调用就行了。</p>
+<figure class="highlight csharp"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">main</span>(<span class="params">String[] args</span>)</span> &#123;</span><br><span class="line">        RestTemplate restTemplate = <span class="keyword">new</span> RestTemplate();</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">        <span class="keyword">for</span> (<span class="built_in">int</span> i = <span class="number">0</span>; i &lt; <span class="number">1000</span>; i++) &#123;</span><br><span class="line">            <span class="built_in">int</span> finalI = i;</span><br><span class="line">            <span class="keyword">new</span> Thread(() -&gt; &#123;</span><br><span class="line">                restTemplate.getForObject(<span class="string">&quot;http://127.0.0.1:8080/getTest?num=&quot;</span> + finalI, Integer.<span class="keyword">class</span>);</span><br><span class="line">            &#125;).start();</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">//阻塞主线程</span></span><br><span class="line">        Thread.<span class="keyword">yield</span>();</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>当然了，这个地方你用一些压测工具，比如 jmeter 啥的，会显得逼格更高，更专业。我这里就偷个懒，直接上代码了。</p>
+<h2 id="答案"><a href="#答案" class="headerlink" title="答案"></a><strong>答案</strong></h2><p>经过前面的准备工作，Demo 和测试代码都就绪了。</p>
+<p>接下来就是先把 Demo 跑起来：</p>
+<p><img src="https://s2.loli.net/2024/09/07/YtPoiNdFWc3jSTC.png" alt="image-20240907193556440"></p>
+<p>然后跑一把 MainTest。</p>
+<p>当 MainTest 跑起来之后，Demo 这边就会快速的、大量的输出这样的日志：</p>
+<p><img src="https://s2.loli.net/2024/09/07/I16NuhVc3oBfWzk.png" alt="image-20240907194156820"></p>
+<p>也就是我前面 getTest 方法中写的日志：</p>
+<p><img src="https://s2.loli.net/2024/09/07/UyuIOjo7tNg4cRP.png" alt="image-20240907194212826"></p>
+<p>好，现在我们回到这个问题：</p>
+<blockquote>
+<p>我短时间内不断的调用这个 Demo 的 getTest 方法，最多能调用多少次？</p>
+</blockquote>
+<p>来，请你告诉我怎么得到这个问题的答案？</p>
+<p>我这里就是一个大力出奇迹，直接统计“接受到请求”关键字在日志中出现的次数就行了：</p>
+<p><img src="E:/blog/images/springboot%E9%A1%B9%E7%9B%AE%E5%8F%AF%E4%BB%A5%E6%8E%A5%E5%8F%97%E5%A4%9A%E5%B0%91%E8%AF%B7%E6%B1%82/20240907-3.png" alt="image-20240907200114910"></p>
+<p>很显然，答案就是：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716174117.png" alt="img"></p>
+<p>所以，当面试官问你：一个 SpringBoot 项目能同时处理多少请求？</p>
+<p>你装作仔细思考之后，笃定的说：200 次。</p>
+<p>面试官微微点头，并等着你继续说下去。</p>
+<p>你也暗自欢喜，背了个答案。然后等着面试官继续问其他问题。</p>
+<p>气氛突然就尴尬了起来。</p>
+<p>接着，你就回家等通知了。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716174231.png" alt="img"></p>
+<p>200 次，这个回答是对的，但是你只说 200 次，这个回答就显得有点尬了。</p>
+<p>重要的是，这个值是怎么来的？</p>
+<p>所以，下面这一部分，你也要背下来。</p>
+<h2 id="怎么来的？"><a href="#怎么来的？" class="headerlink" title="怎么来的？"></a><strong>怎么来的？</strong></h2><p>在开始探索怎么来的之前，我先问你一个问题，这个 200 个线程，是谁的线程，或者说是谁在管理这个线程？</p>
+<p>是 SpringBoot 吗？</p>
+<p>肯定不是，SpringBoot 并不是一个 web 容器。</p>
+<p>应该是 Tomcat 在管理这 200 个线程。</p>
+<p>这一点，我们通过线程 Dump 也能进行验证：</p>
+<p><img src="https://s2.loli.net/2024/09/07/8Zh4nIFHKdAUyTS.png" alt="image-20240907200341230"></p>
+<p><img src="https://s2.loli.net/2024/09/07/J74KNC8kDqj6zET.png" alt="image-20240907201353030"></p>
+<p>通过线程 Dump 文件，我们可以知道，大量的线程都在 sleep 状态。而点击这些线程，查看其堆栈消息，可以看到 Tomcat、threads、ThreadPoolExecutor 等关键字：</p>
+<figure class="highlight mipsasm"><table><tr><td class="code"><pre><span class="line"><span class="built_in">at</span> <span class="keyword">org.apache.Tomcat.util.net.NioEndpoint$SocketProcessor.doRun(NioEndpoint.java:1791)</span></span><br><span class="line"><span class="keyword"></span><span class="built_in">at</span> <span class="keyword">org.apache.Tomcat.util.net.SocketProcessorBase.run(SocketProcessorBase.java:52)</span></span><br><span class="line"><span class="keyword"></span><span class="built_in">at</span> <span class="keyword">org.apache.Tomcat.util.threads.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1191)</span></span><br><span class="line"><span class="keyword"></span><span class="built_in">at</span> <span class="keyword">org.apache.Tomcat.util.threads.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:659)</span></span><br><span class="line"><span class="keyword"></span><span class="built_in">at</span> <span class="keyword">org.apache.Tomcat.util.threads.TaskThread$WrappingRunnable.run(TaskThread.java:61)</span></span><br></pre></td></tr></table></figure>
+
+<p>基于“短时间内有 200 个请求被立马处理的”这个现象，结合你背的滚瓜烂熟的、非常扎实的线程池知识，你先大胆的猜一个：Tomcat 默认核心线程数是 200。</p>
+<p>接下来，我们就是要去源码里面验证这个猜测是否正确了。</p>
+<p>教你一个不用打断点也能获取到调用栈的方法。</p>
+<p>在前面已经展示过了，就是线程 Dump。</p>
+<p>右边就是一个线程完整的调用栈：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716113346.png" alt="img"></p>
+<p>从这个调用栈中，由于我们要找的是 Tomcat 线程池相关的源码，所以第一次出现相关关键字的地方就是这一行：</p>
+<blockquote>
+<p>org.apache.Tomcat.util.threads.ThreadPoolExecutor.Worker#run</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716120846.png" alt="img"></p>
+<p>然后我们在这一行打上断点。</p>
+<p>重启项目，开始调试。</p>
+<p>进入 runWorker 之后，这部分代码看起来就非常眼熟了：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716132249.png" alt="img"></p>
+<p>简直和 JDK 里面的线程池源码一模一样。</p>
+<p>如果你熟悉 JDK 线程池源码的话，调试 Tomcat 的线程池，那个感觉，就像是回家一样。</p>
+<p>如果你不熟悉的话，我建议你尽快去熟悉熟悉。</p>
+<p>随着断点往下走，在 getTask 方法里面，可以看到关于线程池的几个关键参数：</p>
+<blockquote>
+<p>org.apache.Tomcat.util.threads.ThreadPoolExecutor#getTask</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716132830.png" alt="img"></p>
+<p>corePoolSize，核心线程数，值为 10。</p>
+<p>maximumPoolSize，最大线程数，值为 200。</p>
+<p>而且基于 maximumPoolSize 这个参数，你往前翻代码，会发现这个默认值就是 200：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716164409.png" alt="img"></p>
+<p>好，到这里，你发现你之前猜测的“Tomcat 默认核心线程数是 200”是不对的。</p>
+<p>但是你一点也不慌，再次结合你背的滚瓜烂熟的、非常扎实的线程池知识。</p>
+<p>并在心里又默念了一次：当线程池接受到任务之后，先启用核心线程数，再使用队列长度，最后启用最大线程数。</p>
+<p>因为我们前面验证了，Tomcat 可以同时间处理 200 个请求，而它的线程池核心线程数只有 10，最大线程数是 200。</p>
+<p>这说明，我前面这个测试用例，把队列给塞满了，从而导致 Tomcat 线程池启用了最大线程数：</p>
+<p><img src="https://s2.loli.net/2024/09/07/QmX28j75gzANbdr.png" alt="image-20240907202222717"></p>
+<p>嗯，一定是这样的！</p>
+<p>那么，现在的关键问题就是：Tomcat 线程池默认的队列长度是多少呢？</p>
+<p>在当前的这个 Debug 模式下，队列长度可以通过 Alt+F8 进行查看：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716133352.png" alt="img"></p>
+<p>wc，这个值是 Integer.MAX_VALUE，这么大？</p>
+<p>我一共也才 1000 个任务，不可能被占满啊？</p>
+<p>一个线程池：</p>
+<ul>
+<li>核心线程数，值为 10。</li>
+<li>最大线程数，值为 200。</li>
+<li>队列长度，值为 Integer.MAX_VALUE。</li>
+</ul>
+<p>1000 个比较耗时的任务过来之后，应该是只有 10 个线程在工作，然后剩下的 990 个进队列才对啊？</p>
+<p>难道我八股文背错了？</p>
+<p>这个时候不要慌，嗦根辣条冷静一下。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716174538.png" alt="img"></p>
+<p>目前已知的是核心线程数，值为 10。这 10 个线程的工作流程是符合我们认知的。</p>
+<p>但是第 11 个任务过来的时候，本应该进入队列去排队。</p>
+<p>现在看起来，是直接启用最大线程数了。</p>
+<p>所以，我们先把测试用例修改一下：</p>
+<p><img src="https://s2.loli.net/2024/09/07/ae2EQNXmABFIpL7.png" alt="image-20240907202320321"></p>
+<p>那么问题就来了：最后一个请求到底是怎么提交到线程池里面的？</p>
+<p>前面说了，Tomcat 的线程池源码和 JDK 的基本一样。</p>
+<p>往线程池里面提交任务的时候，会执行 execute 这个方法：</p>
+<blockquote>
+<p>org.apache.Tomcat.util.threads.ThreadPoolExecutor#execute(java.lang.Runnable)</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716141941.png" alt="img"></p>
+<p>对于 Tomcat 它会调用到 executeInternal 这个方法：</p>
+<blockquote>
+<p>org.apache.Tomcat.util.threads.ThreadPoolExecutor#executeInternal</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716141541.png" alt="img"></p>
+<p>这个方法里面，标号为 ① 的地方，就是判断当前工作线程数是否小于核心线程数，小于则直接调用 addWorker 方法，创建线程。</p>
+<p>标号为 ② 的地方主要是调用了 offer 方法，看看队列里面是否还能继续添加任务。</p>
+<p>如果不能继续添加，说明队列满了，则来到标号为 ③ 的地方，看看是否能执行 addWorker 方法，创建非核心线程，即启用最大线程数。</p>
+<p>把这个逻辑捋顺之后，接下来我们应该去看哪部分的代码，就很清晰了。</p>
+<p>主要就是去看 workQueue.offer(command) 这个逻辑。</p>
+<p>如果返回 true 则表示加入到队列，返回 false 则表示启用最大线程数嘛。</p>
+<p>这个 workQueue 是 TaskQueue，看起来一点也不眼熟：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716142645.png" alt="img"></p>
+<p>当然不眼熟了，因为这个是 Tomcat 自己基于 LinkedBlockingQueue 搞的一个队列。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716142935.png" alt="img"></p>
+<p>问题的答案就藏在 TaskQueue 的 offer 方法里面。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716174728.png" alt="img"></p>
+<p>所以我重点带你盘一下这个 offer 方法：</p>
+<blockquote>
+<p>org.apache.Tomcat.util.threads.TaskQueue#offer</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716143324.png" alt="img"></p>
+<p>标号为 ① 的地方，判断了 parent 是否为 null，如果是则直接调用父类的 offer 方法。说明要启用这个逻辑，我们的 parent 不能为 null。</p>
+<p>那么这个 parent 是什么玩意，从哪里来的呢？</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716143607.png" alt="img"></p>
+<p>parent 就是 Tomcat 线程池，通过其 set 方法可以知道，是在线程池完成初始化之后，进行了赋值。</p>
+<p>也就是说，你可以理解为，在 Tomcat 的场景下，parent 不会为空。</p>
+<p>标号为 ② 的地方，调用了 getPoolSizeNoLock 方法：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716144049.png" alt="img"></p>
+<p>这个方法是获取当前线程池中有多个线程。</p>
+<p>所以如果这个表达式为 true：</p>
+<blockquote>
+<p>parent.getPoolSizeNoLock() == parent.getMaximumPoolSize()</p>
+</blockquote>
+<p>就表明当前线程池的线程数已经是配置的最大线程数了，那就调用 offer 方法，把当前请求放到到队列里面去。</p>
+<p>标号为 ③ 的地方，是判断已经提交到线程池里面待执行或者正在执行的任务个数，是否比当前线程池的线程数还少。</p>
+<p>如果是，则说明当前线程池有空闲线程可以执行任务，则把任务放到队列里面去，就会被空闲线程给取走执行。</p>
+<p>然后，关键的来了，标号为 ④ 的地方。</p>
+<p>如果当前线程池的线程数比线程池配置的最大线程数还少，则返回 false。</p>
+<p>前面说了，offer 方法返回 false，会出现什么情况？</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716141541.png" alt="img"></p>
+<p>是不是直接开始到上图中标号为 ③ 的地方，去尝试添加非核心线程了？</p>
+<p>也就是启用最大线程数这个配置了。</p>
+<p>所以，朋友们，这个是什么情况？</p>
+<p>这个情况确实就和我们背的线程池的八股文不一样了啊。</p>
+<p>JDK 的线程池，是先使用核心线程数配置，接着使用队列长度，最后再使用最大线程配置。</p>
+<p>Tomcat 的线程池，就是先使用核心线程数配置，再使用最大线程配置，最后才使用队列长度。</p>
+<p>所以，以后当面试官给你说：我们聊聊线程池的工作机制吧？</p>
+<p>你就先追问一句：你是说的 JDK 的线程池呢还是 Tomcat 的线程池呢，因为这两个在运行机制上有一点差异。</p>
+<p>然后，你就看他的表情。</p>
+<p>如果透露出一丝丝迟疑，然后轻描淡写的说一句：那就对比着说一下吧。</p>
+<p>那么恭喜你，在这个题目上开始掌握了一点主动权。</p>
+<p>最后，为了让你更加深刻的理解到 Tomcat 线程池和 JDK 线程池的不一样，我给你搞一个直接复制过去就能运行的代码。</p>
+<p>当你把 taskqueue.setParent(executor) 这行代码注释掉的时候，它的运行机制就是 JDK 的线程池。</p>
+<p>当存在这行代码的时候，它的运行机制就变成了 Tomcat 的线程池。</p>
+<p>玩去吧。</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">import</span> org.apache.tomcat.util.threads.TaskQueue;</span><br><span class="line"><span class="keyword">import</span> org.apache.tomcat.util.threads.TaskThreadFactory;</span><br><span class="line"><span class="keyword">import</span> org.apache.tomcat.util.threads.ThreadPoolExecutor;</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> java.util.concurrent.TimeUnit;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">TomcatThreadPoolExecutorTest</span> &#123;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">main</span><span class="params">(String[] args)</span> <span class="keyword">throws</span> InterruptedException &#123;</span><br><span class="line">        <span class="type">String</span> <span class="variable">namePrefix</span> <span class="operator">=</span> <span class="string">&quot;歪歪歪-exec-&quot;</span>;</span><br><span class="line">        <span class="type">boolean</span> <span class="variable">daemon</span> <span class="operator">=</span> <span class="literal">true</span>;</span><br><span class="line">        <span class="type">TaskQueue</span> <span class="variable">taskqueue</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">TaskQueue</span>(<span class="number">300</span>);</span><br><span class="line">        <span class="type">TaskThreadFactory</span> <span class="variable">tf</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">TaskThreadFactory</span>(namePrefix, daemon, Thread.NORM_PRIORITY);</span><br><span class="line">        <span class="type">ThreadPoolExecutor</span> <span class="variable">executor</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">ThreadPoolExecutor</span>(<span class="number">5</span>,</span><br><span class="line">                <span class="number">150</span>, <span class="number">60000</span>, TimeUnit.MILLISECONDS, taskqueue, tf);</span><br><span class="line">        taskqueue.setParent(executor);</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; <span class="number">300</span>; i++) &#123;</span><br><span class="line">            <span class="keyword">try</span> &#123;</span><br><span class="line">                executor.execute(() -&gt; &#123;</span><br><span class="line">                    logStatus(executor, <span class="string">&quot;创建任务&quot;</span>);</span><br><span class="line">                    <span class="keyword">try</span> &#123;</span><br><span class="line">                        TimeUnit.SECONDS.sleep(<span class="number">2</span>);</span><br><span class="line">                    &#125; <span class="keyword">catch</span> (InterruptedException e) &#123;</span><br><span class="line">                        e.printStackTrace();</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;);</span><br><span class="line">            &#125; <span class="keyword">catch</span> (Exception e) &#123;</span><br><span class="line">                e.printStackTrace();</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        Thread.currentThread().join();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">logStatus</span><span class="params">(ThreadPoolExecutor executor, String name)</span> &#123;</span><br><span class="line">        <span class="type">TaskQueue</span> <span class="variable">queue</span> <span class="operator">=</span> (TaskQueue) executor.getQueue();</span><br><span class="line">        System.out.println(Thread.currentThread().getName() + <span class="string">&quot;-&quot;</span> + name + <span class="string">&quot;-:&quot;</span> +</span><br><span class="line">                <span class="string">&quot;核心线程数:&quot;</span> + executor.getCorePoolSize() +</span><br><span class="line">                <span class="string">&quot;\t活动线程数:&quot;</span> + executor.getActiveCount() +</span><br><span class="line">                <span class="string">&quot;\t最大线程数:&quot;</span> + executor.getMaximumPoolSize() +</span><br><span class="line">                <span class="string">&quot;\t总任务数:&quot;</span> + executor.getTaskCount() +</span><br><span class="line">                <span class="string">&quot;\t当前排队线程数:&quot;</span> + queue.size() +</span><br><span class="line">                <span class="string">&quot;\t队列剩余大小:&quot;</span> + queue.remainingCapacity());</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="等等"><a href="#等等" class="headerlink" title="等等"></a><strong>等等</strong></h2><p>如果你之前确实没了解过 Tomcat 线程池的工作机制，那么看到这里的时候也许你会觉得确实是有一点点收获。</p>
+<p>但是，注意我要说但是了。</p>
+<p>还记得最开始的时候面试官的问题吗？</p>
+<p>面试官的原问题就是：一个 SpringBoot 项目能同时处理多少请求？</p>
+<p>那么请问，前面我讲了这么大一坨 Tomcat 线程池运行原理，这个回答，和这个问题匹配吗？</p>
+<p>是的，除了最开始提出的 200 这个数值之外，并不匹配，甚至在面试官的眼里完全是答非所问了。</p>
+<p>所以，为了把这两个“并不匹配”的东西比较顺畅的链接起来，你必须要先回答面试官的问题，然后再开始扩展。</p>
+<p>比如这样答：一个未进行任何特殊配置，全部采用默认设置的 SpringBoot 项目，这个项目同一时刻最多能同时处理多少请求，取决于我们使用的 web 容器，而 SpringBoot 默认使用的是 Tomcat。</p>
+<p>Tomcat 的默认核心线程数是 10，最大线程数 200，队列长度是无限长。但是由于其运行机制和 JDK 线程池不一样，在核心线程数满了之后，会直接启用最大线程数。所以，在默认的配置下，同一时刻，可以处理 200 个请求。</p>
+<p>在实际使用过程中，应该基于服务实际情况和服务器配置等相关消息，对该参数进行评估设置。</p>
+<p>这个回答就算是差不多了。</p>
+<p>但是，如果很不幸，如果你遇到了我，为了验证你是真的自己去摸索过，还是仅仅只是看了几篇文章，我可能还会追问一下：</p>
+<p>那么其他什么都不动，如果我仅仅加入 server.tomcat.max-connections=10 这个配置呢，那么这个时候最多能处理多少个请求？</p>
+<p>你可能就要猜了：10 个。</p>
+<p>是的，我重新提交 1000 个任务过来，在控制台输出的确实是 10 个，</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716154330.png" alt="img"></p>
+<p>那么 max-connections 这个参数它怎么也能控制请求个数呢？</p>
+<p>为什么在前面的分析过程中我们并没有注意到这个参数呢？</p>
+<p>首先我们看一下它的默认值：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716160608.png" alt="img"></p>
+<p>因为它的默认值是 8192，比最大线程数 200 大，这个参数并没有限制到我们，所以我们没有关注到它。</p>
+<p>当我们把它调整为 10 的时候，小于最大线程数 200，它就开始变成限制项了。</p>
+<p>那么 max-connections 这个参数到底是干啥的呢？</p>
+<p>你先自己去摸索摸索吧。</p>
+<p>同时，还有这样的一个参数，默认是 100：</p>
+<blockquote>
+<p>server.tomcat.accept-count=100</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716161005.png" alt="img"></p>
+<p>它又是干什么的呢？</p>
+<p>“和连接数有关”，我只能提示到这里了，自己去摸索吧。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716180537.png" alt="img"></p>
+<h2 id="再等等"><a href="#再等等" class="headerlink" title="再等等"></a><strong>再等等</strong></h2><p>通过前面的分析，我们知道了，要回答“一个 SpringBoot 项目默认能处理的任务数”，这个问题，得先明确其使用的 web 容器。</p>
+<p>那么问题又来了：SpringBoot 内置了哪些容器呢？</p>
+<blockquote>
+<p>Tomcat、Jetty、Netty、Undertow</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716163334.png" alt="img"></p>
+<p>前面我们都是基于 Tomcat 分析的，如果我们换一个容器呢？</p>
+<p>比如换成 Undertow，这个玩意我只是听过，没有实际使用过，它对我来说就是一个黑盒。</p>
+<p>管它的，先换了再说。</p>
+<p>从 Tomcat 换成 Undertow，只需要修改 Maven 依赖即可，其他什么都不需要动：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716163620.png" alt="img"></p>
+<p>再次启动项目，从日志可以发现已经修改为了 Undertow 容器：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716163826.png" alt="img"></p>
+<p>此时我再次执行 MainTest 方法，还是提交 1000 个请求：</p>
+<p><img src="https://s2.loli.net/2024/09/07/NUzx4mE1WL9dpou.png" alt="image-20240907205124756"></p>
+<p>从日志来看，发现只有 48 个请求被处理了。</p>
+<p>就很懵逼，48 是怎么回事儿，怎么都不是一个整数呢，这让强迫症很难受啊。</p>
+<p>这个时候你的想法是什么，是不是想要看看 48 这个数字到底是从哪里来的？</p>
+<p>怎么看？</p>
+<p>之前找 Tomcat 的 200 的时候不是才教了你的嘛，直接往 Undertow 上套就行了嘛。</p>
+<p>打线程 Dump，然后看堆栈消息：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716165004.png" alt="img"></p>
+<p>发现 EnhancedQueueExecutor 这个线程池，接着在这个类里面去找构建线程池时的参数。</p>
+<p>很容易就找到了这个构造方法：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716170419.png" alt="img"></p>
+<p>所以，在这里打上断点，重启项目。</p>
+<p>通过 Debug 可以知道，关键参数都是从 builder 里面来的。</p>
+<p>而 builder 里面，coreSize 和 maxSize 都是 48，队列长度是 Integer.MAX_VALUE。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716170701.png" alt="img"></p>
+<p>所以看一下 Builder 里面的 coreSize 是怎么来的。</p>
+<p>点过来发现 coreSize 的默认值是 16：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716170808.png" alt="img"></p>
+<p>不要慌，再打断点，再重启项目。</p>
+<p>然后你会在它的 setCorePoolSize 方法处停下来，而这个方法的入参就是我们要找的 48：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716170937.png" alt="img"></p>
+<p>顺藤摸瓜，重复几次打断点、重启的动作之后，你会找到 48 是一个名为 WORKER_TASK_CORE_THREADS 的变量，是从这里来的：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716171232.png" alt="img"></p>
+<p>而 WORKER_TASK_CORE_THREADS 这个变量设置的地方是这样的：</p>
+<blockquote>
+<p>io.undertow.Undertow#start</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716171424.png" alt="img"></p>
+<p>而这里的 workerThreads 取值是这样的：</p>
+<blockquote>
+<p>io.undertow.Undertow.Builder#Builder</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716171520.png" alt="img"></p>
+<p>取的是机器的 CPU 个数乘以 8。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716171629.png" alt="img"></p>
+<p>所以我这里是 6*8=48。</p>
+<p>哦，真相大白，原来 48 是这样来的。</p>
+<p>没意思。</p>
+<p>确实没意思，但是既然都已经替换为 Undertow 了，那么你去研究一下它的 NIO ByteBuffer、NIO Channel、BufferPool、XNIO Worker、IO 线程池、Worker 线程池…</p>
+<p>然后再和 Tomcat 对比着学，</p>
+<p>就开始有点意思了。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716180859.png" alt="img"></p>
+<h2 id="最后再等等"><a href="#最后再等等" class="headerlink" title="最后再等等"></a><strong>最后再等等</strong></h2><p>这篇文章是基于“一个 SpringBoot 项目能同时处理多少请求？”这个面试题出发的。</p>
+<p>但是经过我们前面简单的分析，你也知道，这个问题如果在没有加一些特定的前提条件的情况下，答案是各不一样的。</p>
+<p>比如我再给你举一个例子，还是我们的 Demo，只是使用一下 @Async 注解，其他什么都不变：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230716210625.png" alt="img"></p>
+<p>再次启动项目，发起访问，日志输出变成了这样：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230716212906.png" alt="img"></p>
+<p>同时能处理的请求，直接从 Tomcat 的默认 200 个变成了 8 个？</p>
+<p>因为 @Async 注解对应的线程池，默认的核心线程数是 8。</p>
+<p>所以你看，稍微一变化，答案看起来又不一样了，同时这个请求在内部流转的过程也不一样了，又是一个可以铺开谈的点。</p>
+<p>在面试过程中也是这样的，不要急于答题，当你觉得面试官问题描述的不清楚的地方，你可以先试探性的问一下，看看能不能挖掘出一点他没有说出来的默认条件。</p>
+<p>当“默认条件”挖掘的越多，你的回答就会更容易被面试官接受。而这个挖掘的过程，也是面试过程中一个重要的表现环节。</p>
+<p>而且，有时候，面试官就喜欢给出这样的“模糊”的问题，因为问题越模糊，坑就越多，当面试者跳进自己挖好的坑里面的时候，就是结束一次交锋的时候；当面试者看出来自己挖好的坑，并绕过去的时候，也是结束一轮交锋的时候。</p>
+<p>所以，不要急于答题，多想，多问。不管是对于面试者还是面试官，一个好的面试体验，一定不是没有互动的一问一答，而是一个相互拉锯的过程。</p>
+]]></content>
+      <categories>
+        <category>技术</category>
+      </categories>
+      <tags>
+        <tag>多线程</tag>
+        <tag>八股文</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Mysql</title>
+    <url>/2021/04/07/mysql/Mysql/</url>
+    <content><![CDATA[<h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>今天不整那些花里胡哨、虚头巴脑的前言了，直接进入正题怼起来。</p>
+<span id="more"></span>
+<blockquote>
+<p>常见的索引类型有哪些？</p>
+</blockquote>
+<p>常见的索引类型有：hash、b树、b+树。</p>
+<p>hash：底层就是 hash 表。进行查找时，根据 key 调用hash 函数获得对应的 hashcode，根据 hashcode 找到对应的数据行地址，根据地址拿到对应的数据。</p>
+<p>B树：B树是一种多路搜索树，n 路搜索树代表每个节点最多有 n 个子节点。每个节点存储 key + 指向下一层节点的指针+ 指向 key 数据记录的地址。查找时，从根结点向下进行查找，直到找到对应的key。</p>
+<p>B+树：B+树是b树的变种，主要区别在于：B+树的非叶子节点只存储 key + 指向下一层节点的指针。另外，B+树的叶子节点之间通过指针来连接，构成一个有序链表，因此对整棵树的遍历只需要一次线性遍历叶子结点即可。</p>
+<blockquote>
+<p>为什么MySQL数据库要用B+树存储索引？而不用红黑树、Hash、B树？</p>
+</blockquote>
+<p>红黑树：如果在内存中，红黑树的查找效率比B树更高，但是涉及到磁盘操作，B树就更优了。因为红黑树是二叉树，数据量大时树的层数很高，从树的根结点向下寻找的过程，每读1个节点，都相当于一次IO操作，因此红黑树的I/O操作会比B树多的多。</p>
+<p>hash 索引：如果只查询单个值的话，hash 索引的效率非常高。但是 hash 索引有几个问题：1）不支持范围查询；2）不支持索引值的排序操作；3）不支持联合索引的最左匹配规则。</p>
+<p>B树索引：B树索相比于B+树，在进行范围查询时，需要做局部的中序遍历，可能要跨层访问，跨层访问代表着要进行额外的磁盘I/O操作；另外，B树的非叶子节点存放了数据记录的地址，会导致存放的节点更少，树的层数变高</p>
+<blockquote>
+<p>MySQL 中的索引叶子节点存放的是什么？</p>
+</blockquote>
+<p>MyISAM和InnoDB都是采用的B+树作为索引结构，但是叶子节点的存储上有些不同。</p>
+<p>MyISAM：主键索引和辅助索引（普通索引）的叶子节点都是存放 key 和 key 对应数据行的地址。在MyISAM 中，主键索引和辅助索引没有任何区别。</p>
+<p>InnoDB：主键索引存放的是 key 和 key 对应的数据行。辅助索引存放的是 key 和 key 对应的主键值。因此在使用辅助索引时，通常需要检索两次索引，首先检索辅助索引获得主键值，然后用主键值到主键索引中检索获得记录。</p>
+<blockquote>
+<p>什么是聚簇索引（聚集索引）？</p>
+</blockquote>
+<p>聚簇索引并不是一种单独的索引类型，而是一种数据存储方式。聚簇索引将索引和数据行放到了一块，找到索引也就找到了数据。因为无需进行回表操作，所以效率很高。</p>
+<p>InnoDB 中必然会有，且只会有一个聚簇索引。通常是主键，如果没有主键，则优先选择非空的唯一索引，如果唯一索引也没有，则会创建一个隐藏的row_id 作为聚簇索引。至于为啥会只有一个聚簇索引，其实很简单，因为我们的数据只会存储一份。</p>
+<p>而非聚簇索引则将数据存储和索引分开，找到索引后，需要通过对应的地址找到对应的数据行。MyISAM 的索引方式就是非聚簇索引。</p>
+<blockquote>
+<p>什么是回表查询？</p>
+</blockquote>
+<p>InnoDB 中，对于主键索引，只需要走一遍主键索引的查询就能在叶子节点拿到数据。</p>
+<p>而对于普通索引，叶子节点存储的是 key + 主键值，因此需要再走一次主键索引，通过主键索引找到行记录，这就是所谓的回表查询，先定位主键值，再定位行记录。</p>
+<blockquote>
+<p>走普通索引，一定会出现回表查询吗？</p>
+</blockquote>
+<p>不一定，如果查询语句所要求的字段全部命中了索引，那么就不必再进行回表查询。</p>
+<p>很容易理解，有一个 user 表，主键为 id，name 为普通索引，则再执行：select id, name from user where name = ‘joonwhee’ 时，通过name 的索引就能拿到 id 和 name了，因此无需再回表去查数据行了。</p>
+<blockquote>
+<p>什么是覆盖索引（索引覆盖）吗？</p>
+</blockquote>
+<p>覆盖索引是 SQL-Server 中的一种说法，上面讲的例子其实就实现了覆盖索引。具体的：当索引上包含了查询语句中的所有列时，我们无需进行回表查询就能拿到所有的请求数据，因此速度会很快。</p>
+<p>当explain的输出结果Extra字段为Using index时，则代表触发覆盖索引。以上面的例子为例：<br><img src="https://i.loli.net/2021/04/07/jglpJaW9k7oQSh1.png" alt="mysql1"></p>
+<blockquote>
+<p>联合索引（复合索引）的底层实现？最佳左前缀原则？</p>
+</blockquote>
+<p>联合索引底层还是使用B+树索引，并且还是只有一棵树，只是此时的排序会：首先按照第一个索引排序，在第一个索引相同的情况下，再按第二个索引排序，依次类推。</p>
+<p>这也是为什么有“最佳左前缀原则”的原因，因为右边（后面）的索引都是在左边（前面）的索引排序的基础上进行排序的，如果没有左边的索引，单独看右边的索引，其实是无序的。</p>
+<p>还是以字典为例，我们如果要查第2个字母为 k 的，通过目录是无法快速找的，因为首字母 A - Z 里面都可能包含第2个字母为 k 的。</p>
+<p>联合索引的索引字段中有一个值为null，则将其放在叶子节点的最前面；可以认为null值是最小的。<br><img src="https://i.loli.net/2021/04/07/71NCPRvTEgWlIib.png" alt="mysql2"></p>
+<blockquote>
+<p>union 和 union all 的区别</p>
+</blockquote>
+<p>union all：对两个结果集直接进行并集操作，记录可能有重复，不会进行排序。</p>
+<p>union：对两个结果集进行并集操作，会进行去重，记录不会重复，按字段的默认规则排序。</p>
+<p>因此，从效率上说，UNION ALL 要比 UNION 更快。</p>
+<blockquote>
+<p>B+树中一个节点到底多大合适？</p>
+</blockquote>
+<p>1页或页的倍数最为合适。因为如果一个节点的大小小于1页，那么读取这个节点的时候其实也会读出1页，造成资源的浪费。所以为了不造成浪费，所以最后把一个节点的大小控制在1页、2页、3页等倍数页大小最为合适。</p>
+<p>这里说的“页”是 MySQL 自定义的单位（和操作系统类似），MySQL 的 Innodb 引擎中1页的默认大小是16k，可以使用命令SHOW GLOBAL STATUS LIKE ‘Innodb_page_size’ 查看。<br><img src="https://i.loli.net/2021/04/07/JC3QLf28KgiUmV7.png" alt="mysql3"></p>
+<blockquote>
+<p>MySQL 中B+树的一个节点大小为多大呢？</p>
+</blockquote>
+<p>在 MySQL 中 B+ 树的一个节点大小为“1页”，也就是16k。</p>
+<p>Innodb中，B+树中的一个节点存储的内容是：<br>非叶子节点：key + 指针<br>叶子节点：数据行（key 通常是数据的主键）</p>
+<p>对于叶子节点：我们假设1行数据大小为1k（对于普通业务绝对够了），那么1页能存16条数据。</p>
+<p>对于非叶子节点：key 使用 bigint 则为8字节，指针在 MySQL 中为6字节，一共是14字节，则16k能存放 16 * 1024 / 14 = 1170个。那么一颗高度为3的B+树能存储的数据为：1170 * 1170 * 16 = 21902400（千万级）。</p>
+<p>所以在 InnoDB 中B+树高度一般为3层时，就能满足千万级的数据存储。在查找数据时一次页的查找代表一次IO，所以通过主键索引查询通常只需要1-3次 IO 操作即可查找到数据。千万级别对于一般的业务来说已经足够了，所以一个节点为1页，也就是16k是比较合理的。</p>
+<blockquote>
+<p>什么是 Buffer Pool？</p>
+</blockquote>
+<p>Buffer Pool 是 InnoDB 维护的一个缓存区域，用来缓存数据和索引在内存中，主要用来加速数据的读写，如果 Buffer Pool 越大，那么 MySQL 就越像一个内存数据库，默认大小为 128M。</p>
+<p>InnoDB 会将那些热点数据和一些 InnoDB 认为即将访问到的数据存在 Buffer Pool 中，以提升数据的读取性能。</p>
+<p>InnoDB 在修改数据时，如果数据的页在 Buffer Pool 中，则会直接修改 Buffer Pool，此时我们称这个页为脏页，InnoDB 会以一定的频率将脏页刷新到磁盘，这样可以尽量减少磁盘I/O，提升性能。</p>
+<blockquote>
+<p>InnoDB 四大特性</p>
+</blockquote>
+<p>插入缓冲（insert buffer）：<br>索引是存储在磁盘上的，所以对于索引的操作需要涉及磁盘操作。如果我们使用自增主键，那么在插入主键索引（聚簇索引）时，只需不断追加即可，不需要磁盘的随机 I/O。但是如果我们使用的是普通索引，大概率是无序的，此时就涉及到磁盘的随机 I/O，而随机I/O的性能是比较差的（Kafka 官方数据：磁盘顺序I/O的性能是磁盘随机I/O的4000~5000倍）。</p>
+<p>因此，InnoDB 存储引擎设计了 Insert Buffer ，对于非聚集索引的插入或更新操作，不是每一次直接插入到索引页中，而是先判断插入的非聚集索引页是否在缓冲池（Buffer pool）中，若在，则直接插入；若不在，则先放入到一个 Insert Buffer 对象中，然后再以一定的频率和情况进行 Insert Buffer 和辅助索引页子节点的 merge（合并）操作，这时通常能将多个插入合并到一个操作中（因为在一个索引页中），这就大大提高了对于非聚集索引插入的性能。</p>
+<p>插入缓冲的使用需要满足以下两个条件：1）索引是辅助索引；2）索引不是唯一的。</p>
+<p>二次写（double write）：<br>脏页刷盘风险：InnoDB 的 page size一般是16KB，操作系统写文件是以4KB作为单位，那么每写一个 InnoDB 的 page 到磁盘上，操作系统需要写4个块。于是可能出现16K的数据，写入4K 时，发生了系统断电或系统崩溃，只有一部分写是成功的，这就是 partial page write（部分页写入）问题。这时会出现数据不完整的问题。</p>
+<p>这时是无法通过 redo log 恢复的，因为 redo log 记录的是对页的物理修改，如果页本身已经损坏，重做日志也无能为力。</p>
+<p>doublewrite 就是用来解决该问题的。doublewrite 由两部分组成，一部分为内存中的 doublewrite buffer，其大小为2MB，另一部分是磁盘上共享表空间中连续的128个页，即2个区(extent)，大小也是2M。</p>
+<p>为了解决 partial page write 问题，当 MySQL 将脏数据刷新到磁盘的时候，会进行以下操作：</p>
+<p>1）先将脏数据复制到内存中的 doublewrite buffer</p>
+<p>2）之后通过 doublewrite buffer 再分2次，每次1MB写入到共享表空间的磁盘上（顺序写，性能很高）</p>
+<p>3）完成第二步之后，马上调用 fsync 函数，将doublewrite buffer中的脏页数据写入实际的各个表空间文件（离散写）。</p>
+<p>如果操作系统在将页写入磁盘的过程中发生崩溃，InnoDB 再次启动后，发现了一个 page 数据已经损坏，InnoDB 存储引擎可以从共享表空间的 doublewrite 中找到该页的一个最近的副本，用于进行数据恢复了。</p>
+<p>自适应哈希索引(adaptive hash index):<br>哈希（hash）是一种非常快的查找方法，一般情况下查找的时间复杂度为 O(1)。但是由于不支持范围查询等条件的限制，InnoDB 并没有采用 hash 索引，但是如果能在一些特殊场景下使用 hash 索引，则可能是一个不错的补充，而 InnoDB 正是这么做的。</p>
+<p>具体的，InnoDB 会监控对表上索引的查找，如果观察到某些索引被频繁访问，索引成为热数据，建立哈希索引可以带来速度的提升，则建立哈希索引，所以称之为自适应（adaptive）的。自适应哈希索引通过缓冲池的 B+ 树构造而来，因此建立的速度很快。而且不需要将整个表都建哈希索引，InnoDB 会自动根据访问的频率和模式来为某些页建立哈希索引。</p>
+<p>预读（read ahead）：<br>InnoDB 在 I/O 的优化上有个比较重要的特性为预读，当 InnoDB 预计某些 page 可能很快就会需要用到时，它会异步地将这些 page 提前读取到缓冲池（buffer pool）中，这其实有点像空间局部性的概念。</p>
+<p>空间局部性（spatial locality）：如果一个数据项被访问，那么与他地址相邻的数据项也可能很快被访问。</p>
+<p>InnoDB使用两种预读算法来提高I/O性能：线性预读（linear read-ahead）和随机预读（randomread-ahead）。</p>
+<p>其中，线性预读以 extent（块，1个 extent 等于64个 page）为单位，而随机预读放到以 extent 中的 page 为单位。线性预读着眼于将下一个extent 提前读取到 buffer pool 中，而随机预读着眼于将当前 extent 中的剩余的 page 提前读取到 buffer pool 中。</p>
+<p>线性预读（Linear read-ahead）：线性预读方式有一个很重要的变量 innodb_read_ahead_threshold，可以控制 Innodb 执行预读操作的触发阈值。如果一个 extent 中的被顺序读取的 page 超过或者等于该参数变量时，Innodb将会异步的将下一个 extent 读取到 buffer pool中，innodb_read_ahead_threshold 可以设置为0-64（一个 extend 上限就是64页）的任何值，默认值为56，值越高，访问模式检查越严格。<br> <br>随机预读（Random read-ahead）: 随机预读方式则是表示当同一个 extent 中的一些 page 在 buffer pool 中发现时，Innodb 会将该 extent 中的剩余 page 一并读到 buffer pool中，由于随机预读方式给 Innodb code 带来了一些不必要的复杂性，同时在性能也存在不稳定性，在5.5中已经将这种预读方式废弃。要启用此功能，请将配置变量设置 innodb_random_read_ahead 为ON</p>
+<blockquote>
+<p>共享锁和排他锁？</p>
+</blockquote>
+<p>共享锁又称为读锁，简称S锁，顾名思义，共享锁就是多个事务对于同一数据可以共享一把锁，都能访问到数据，但是只能读不能修改。<br> <br>排他锁又称为写锁，简称X锁，顾名思义，排他锁就是不能与其他锁并存，如一个事务获取了一个数据行的排他锁，其他事务就不能再获取该行的其他锁，包括共享锁和排他锁，但是获取排他锁的事务可以对数据就行读取和修改。</p>
+<p>常见的几种 SQL 语句的加锁情况如下：</p>
+<p>select * from table：不加锁</p>
+<p>update/insert/delete：排他锁</p>
+<p>select * from table where id = 1 for update：id为索引，加排他锁</p>
+<p>select * from table where id = 1 lock in share mode：id为索引，加共享锁</p>
+<blockquote>
+<p>数据库的行锁和表锁</p>
+</blockquote>
+<p>行锁：操作时只锁某一（些）行，不对其它行有影响。开销大，加锁慢；会出现死锁；锁定粒度小，发生锁冲突的概率低，并发度高。</p>
+<p>表锁：即使操作一条记录也会锁住整个表。开销小，加锁快；不会出现死锁；锁定粒度大，发生锁冲突概率高，并发度最低。</p>
+<p>页锁：操作时锁住一页数据（16kb）。开销和加锁速度介于表锁和行锁之间；会出现死锁；锁定粒度介于表锁和行锁之间，并发度一般。</p>
+<p>InnoDB 有行锁和表锁，MyIsam 只有表锁。</p>
+<blockquote>
+<p>InnoDB 的行锁是怎么实现的？</p>
+</blockquote>
+<p>InnoDB 行锁是通过索引上的索引项来实现的。意味者：只有通过索引条件检索数据，InnoDB 才会使用行级锁，否则，InnoDB将使用表锁！</p>
+<p>对于主键索引：直接锁住锁住主键索引即可。</p>
+<p>对于普通索引：先锁住普通索引，接着锁住主键索引，这是因为一张表的索引可能存在多个，通过主键索引才能确保锁是唯一的，不然如果同时有2个事务对同1条数据的不同索引分别加锁，那就可能存在2个事务同时操作一条数据了。</p>
+<blockquote>
+<p>InnoDB 锁的算法有哪几种？</p>
+</blockquote>
+<p>Record lock：记录锁，单条索引记录上加锁，锁住的永远是索引，而非记录本身。</p>
+<p>Gap lock：间隙锁，在索引记录之间的间隙中加锁，或者是在某一条索引记录之前或者之后加锁，并不包括该索引记录本身。</p>
+<p>Next-key lock：Record lock 和 Gap lock 的结合，即除了锁住记录本身，也锁住索引之间的间隙。</p>
+<blockquote>
+<p>MySQL 如何实现悲观锁和乐观锁？</p>
+</blockquote>
+<p>乐观锁：更新时带上版本号（cas更新）</p>
+<p>悲观锁：使用共享锁和排它锁，select…lock in share mode，select…for update。</p>
+<blockquote>
+<p>存储引擎的选择？</p>
+</blockquote>
+<p>没有特殊情况，使用 InnoDB 即可。如果表中绝大多数都只是读查询，可以考虑 MyISAM</p>
+<blockquote>
+<p>如何做慢 SQL 优化？</p>
+</blockquote>
+<p>首先要搞明白慢的原因是什么：是查询条件没有命中索引？还是 load 了不需要的数据列？还是数据量太大？所以优化也是针对这三个方向来的。</p>
+<p>首先用 explain 分析语句的执行计划，查看使用索引的情况，是不是查询没走索引，如果可以加索引解决，优先采用加索引解决。</p>
+<p>分析语句，看看是否存在一些导致索引失效的用法，是否 load 了额外的数据，是否加载了许多结果中并不需要的列，对语句进行分析以及重写。</p>
+<p>如果对语句的优化已经无法进行，可以考虑表中的数据量是否太大，如果是的话可以进行垂直拆分或者水平拆分。</p>
+<blockquote>
+<p>说说 MySQL 的主从复制？</p>
+</blockquote>
+<p>MySQL主从复制涉及到三个线程，一个运行在主节点（Log Dump Thread），其余两个（I/O Thread，SQL Thread）运行在从节点，如下图所示<br><img src="https://i.loli.net/2021/04/07/2RsFWgJEc1qIXMt.jpg" alt="mysql4"></p>
+<p>主从复制默认是异步的模式，具体过程如下。</p>
+<p>1）从节点上的I/O 线程连接主节点，并请求从指定日志文件（bin log file）的指定位置（bin log position，或者从最开始的日志）之后的日志内容；</p>
+<p>2）主节点接收到来自从节点的 I/O请求后，读取指定文件的指定位置之后的日志信息，返回给从节点。返回信息中除了日志所包含的信息之外，还包括本次返回的信息的 bin-log file 以及 bin-log position；从节点的 I/O 进程接收到内容后，将接收到的日志内容更新到 relay log 中，并将读取到的 bin log file（文件名）和position（位置）保存到 master-info 文件中，以便在下一次读取的时候能够清楚的告诉 Master “我需要从某个bin-log 的哪个位置开始往后的日志内容”；</p>
+<p>3）从节点的 SQL 线程检测到 relay-log 中新增加了内容后，会解析 relay-log 的内容，并在本数据库中执行。</p>
+<blockquote>
+<p>异步复制，主库宕机后，数据可能丢失？</p>
+</blockquote>
+<p>可以使用半同步复制或全同步复制。</p>
+<p>半同步复制：</p>
+<p>修改语句写入bin log后，不会立即给客户端返回结果。而是首先通过log dump 线程将 binlog 发送给从节点，从节点的 I/O 线程收到 binlog 后，写入到 relay log，然后返回 ACK 给主节点，主节点 收到 ACK 后，再返回给客户端成功。<br><img src="https://i.loli.net/2021/04/07/BtCMYiDuhXUSyGx.jpg" alt="mysql5"></p>
+<p>半同步复制的特点：</p>
+<p>确保事务提交后 binlog 至少传输到一个从库</p>
+<p>不保证从库应用完这个事务的 binlog</p>
+<p>性能有一定的降低，响应时间会更长</p>
+<p>网络异常或从库宕机，卡主主库，直到超时或从库恢复</p>
+<p>全同步复制：主节点和所有从节点全部执行了该事务并确认才会向客户端返回成功。因为需要等待所有从库执行完该事务才能返回，所以全同步复制的性能必然会收到严重的影响。</p>
+<blockquote>
+<p>主库写压力大，从库复制很可能出现延迟？</p>
+</blockquote>
+<p>可以使用并行复制（并行是指从库多个SQL线程并行执行 relay log），解决从库复制延迟的问题。</p>
+<p>MySQL 5.7 中引入基于组提交的并行复制，其核心思想：一个组提交的事务都是可以并行回放，因为这些事务都已进入到事务的 prepare 阶段，则说明事务之间没有任何冲突（否则就不可能提交）。</p>
+<p>判断事务是否处于一个组是通过 last_committed 变量，last_committed 表示事务提交的时候，上次事务提交的编号，如果事务具有相同的 last_committed，则表示这些事务都在一组内，可以进行并行的回放。</p>
+<blockquote>
+<p>MySQL 的事务隔离级别有哪些？分别用于解决什么问题？</p>
+</blockquote>
+<p>主要用于解决脏读、不可重复读、幻读。</p>
+<p>脏读：一个事务读取到另一个事务还未提交的数据。</p>
+<p>不可重复读：在一个事务中多次读取同一个数据时，结果出现不一致。</p>
+<p>幻读：在一个事务中使用相同的 SQL 两次读取，第二次读取到了其他事务新插入的行。</p>
+<p>不可重复读注重于数据的修改，而幻读注重于数据的插入。<br><img src="https://i.loli.net/2021/04/07/SiyrkGcJj2ZChFa.png" alt="mysql5"></p>
+<blockquote>
+<p>MySQL 的可重复读怎么实现的？</p>
+</blockquote>
+<p>使用 MVCC 实现的，即 Mutil-Version Concurrency Control，多版本并发控制。关于 MVCC，比较常见的说法如下，包括《高性能 MySQL》也是这么介绍的。</p>
+<p>InnoDB 在每行记录后面保存两个隐藏的列，分别保存了数据行的创建版本号和删除版本号。每开始一个新的事务，系统版本号都会递增。事务开始时刻的版本号会作为事务的版本号，用来和查询到的每行记录的版本号对比。在可重复读级别下，MVCC是如何操作的：</p>
+<p>SELECT：必须同时满足以下两个条件，才能查询到。1）只查版本号早于当前版本的数据行；2）行的删除版本要么未定义，要么大于当前事务版本号。</p>
+<p>INSERT：为插入的每一行保存当前系统版本号作为创建版本号。</p>
+<p>DELETE：为删除的每一行保存当前系统版本号作为删除版本号。</p>
+<p>UPDATE：插入一条新数据，保存当前系统版本号作为创建版本号。同时保存当前系统版本号作为原来的数据行删除版本号。</p>
+<p>MVCC 只作用于 RC（Read Committed）和 RR（Repeatable Read）级别，因为 RU（Read Uncommitted）总是读取最新的数据版本，而不是符合当前事务版本的数据行。而 Serializable 则会对所有读取的行都加锁。这两种级别都不需要 MVCC 的帮助。</p>
+<p>实际上，InnoDB 会在每行记录后面增加三个隐藏字段：</p>
+<p>DB_ROW_ID：行ID，随着插入新行而单调递增，如果有主键，则不会包含该列。</p>
+<p>DB_TRX_ID：记录插入或更新该行的事务的事务ID。</p>
+<p>DB_ROLL_PTR：回滚指针，指向 undo log 记录。每次对某条记录进行改动时，该列会存一个指针，可以通过这个指针找到该记录修改前的信息 。当某条记录被多次修改时，该行记录会存在多个版本，通过DB_ROLL_PTR 链接形成一个类似版本链的概念。<br><img src="https://i.loli.net/2021/04/07/njgr1FOEfkw5A9e.png" alt="mysql6"></p>
+<p>接下来进入正题，以 RR 级别为例：每开启一个事务时，系统会给该事务会分配一个事务 Id，在该事务执行第一个 select 语句的时候，会生成一个当前时间点的事务快照 ReadView，主要包含以下几个属性：</p>
+<p>trx_ids：生成 ReadView 时当前系统中活跃的事务 Id 列表，就是还未执行事务提交的。</p>
+<p>up_limit_id：低水位，取 trx_ids 中最小的那个，trx_id 小于该值都能看到。</p>
+<p>low_limit_id：高水位，生成 ReadView 时系统将要分配给下一个事务的id值，trx_id 大于等于该值都不能看到。</p>
+<p>creator_trx_id：生成该 ReadView 的事务的事务 Id。</p>
+<p>有了这个ReadView，这样在访问某条记录时，只需要按照下边的步骤判断记录的某个版本是否可见：</p>
+<p>1）如果被访问版本的trx_id与ReadView中的creator_trx_id值相同，意味着当前事务在访问它自己修改过的记录，所以该版本可以被当前事务访问。</p>
+<p>2）如果被访问版本的trx_id小于ReadView中的up_limit_id值，表明生成该版本的事务在当前事务生成ReadView前已经提交，所以该版本可以被当前事务访问。</p>
+<p>3）如果被访问版本的trx_id大于ReadView中的low_limit_id值，表明生成该版本的事务在当前事务生成ReadView后才开启，所以该版本不可以被当前事务访问。</p>
+<p>4）如果被访问版本的trx_id属性值在ReadView的up_limit_id和low_limit_id之间，那就需要判断一下trx_id属性值是不是在trx_ids列表中。如果在，说明创建ReadView时生成该版本的事务还是活跃的，该版本不可以被访问；如果不在，说明创建ReadView时生成该版本的事务已经被提交，该版本可以被访问。</p>
+<p>在进行判断时，首先会拿记录的最新版本来比较，如果该版本无法被当前事务看到，则通过记录的 DB_ROLL_PTR 找到上一个版本，重新进行比较，直到找到一个能被当前事务看到的版本。</p>
+<p>而对于删除，其实就是一种特殊的更新，InnoDB 用一个额外的标记位 delete_bit 标识是否删除。当我们在进行判断时，会检查下 delete_bit 是否被标记，如果是，则跳过该版本，通过 DB_ROLL_PTR 拿到下一个版本进行判断。</p>
+<p>以上内容是对于 RR 级别来说，而对于 RC 级别，其实整个过程几乎一样，唯一不同的是生成 ReadView 的时机，RR 级别只在事务开始时生成一次，之后一直使用该 ReadView。而 RC 级别则在每次 select 时，都会生成一个 ReadView。</p>
+<blockquote>
+<p>那 MVCC 解决了幻读了没有？</p>
+</blockquote>
+<p>对于快照读，MVCC 因为因为从 ReadView 读取，所以必然不会看到新插入的行，所以天然就解决了幻读的问题。</p>
+<p>而对于当前读的幻读，MVCC 是无法解决的。需要使用 Gap Lock 或 Next-Key Lock（Gap Lock + Record Lock）来解决。</p>
+<p>其实原理也很简单，用上面的例子稍微修改下以触发当前读：select * from user where id &lt; 10 for update，当使用了 Gap Lock 时，Gap 锁会锁住 id &lt; 10 的整个范围，因此其他事务无法插入 id &lt; 10 的数据，从而防止了幻读。</p>
+<blockquote>
+<p>那经常有人说 Repeatable Read 解决了幻读是什么情况？</p>
+</blockquote>
+<p>SQL 标准中规定的 RR 并不能消除幻读，但是 MySQL 的 RR 可以，靠的就是 Gap 锁。在 RR 级别下，Gap 锁是默认开启的，而在 RC 级别下，Gap 锁是关闭的。</p>
+]]></content>
+      <categories>
+        <category>技术</category>
+      </categories>
+      <tags>
+        <tag>Mysql</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>来啊，分页啊</title>
+    <url>/2024/09/07/mysql/%E6%9D%A5%E5%95%8A%EF%BC%8C%E5%88%86%E9%A1%B5%E5%95%8A/</url>
+    <content><![CDATA[<p>前段时间踩到一个比较无语的生产 BUG，严格来说其实也不能算是 BUG，只能说开发同事对于业务同事的需求理解没有到位。</p>
+<p>这个 BUG 其实和分页没有任何关系，但是当我去排查问题的时候，我看了一眼 SQL ，大概是这样的：</p>
+<blockquote>
+<p>select * from table order by priority limit 1;</p>
+</blockquote>
+<p>priority，就是优先级的意思。</p>
+<p>按照优先级 order by 然后 limit 取优先级最高（数字越小，优先级越高）的第一条 ，结合业务背景和数据库里面的数据，我立马就意识到了问题所在。</p>
+<p>想起了我当年在写分页逻辑的时候，虽然场景和这个完全不一样，但是踩过到底层原理一模一样的坑，这玩意印象深刻，所以立马就识别出来了。</p>
+<p>借着这个问题，也盘点一下我遇到过的三个关于分页查询有意思的坑。</p>
+<h2 id="职业生涯的第一个生产-BUG"><a href="#职业生涯的第一个生产-BUG" class="headerlink" title="职业生涯的第一个生产 BUG"></a>职业生涯的第一个生产 BUG</h2><p>职业生涯的第一个生产 BUG 就是一个小小的分页查询。</p>
+<p>当时还在做支付系统，接手的一个需求也很简单就是做一个定时任务，定时把数据库里面状态为初始化的订单查询出来，调用另一个服务提供的接口查询订单的状态并更新。</p>
+<p>由于流程上有数据强校验，不用考虑数据不存在的情况。所以该接口可能返回的状态只有三种：成功，失败，处理中。</p>
+<p>很简单，很常规的一个需求对吧，我分分钟就能写出伪代码：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="comment">//获取订单状态为初始化的数据(0:初始化 1:处理中 2:成功 3:失败)</span></span><br><span class="line"><span class="comment">//select * from order where order_status=0;</span></span><br><span class="line"><span class="type">ArrayList</span> <span class="variable">initOrderInfoList</span> <span class="operator">=</span> queryInitOrderInfoList();</span><br><span class="line"><span class="comment">//循环处理这批数据</span></span><br><span class="line"><span class="keyword">for</span>(OrderInfo orderInfo : initOrderInfoList)&#123;</span><br><span class="line">    <span class="comment">//捕获异常以免一条数据错误导致循环结束</span></span><br><span class="line">    <span class="keyword">try</span>&#123;</span><br><span class="line">        <span class="comment">//发起rpc调用</span></span><br><span class="line">        <span class="type">String</span> <span class="variable">orderStatus</span> <span class="operator">=</span> queryOrderStatus(orderInfo.getOrderId);</span><br><span class="line">        <span class="comment">//更新订单状态</span></span><br><span class="line">        updateOrderInfo(orderInfo.getOrderId,orderStatus);    </span><br><span class="line">    &#125; <span class="keyword">catch</span> (Exception e)&#123;</span><br><span class="line">        <span class="comment">//打印异常</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>来，你说上面这个程序有什么问题？</p>
+<p><img src="https://s2.loli.net/2024/09/07/U5k2Vz3DOIJyhvs.png" alt="3554b7005e5beb8318661912d874b4c4.png"></p>
+<p>其实在绝大部分情况下都没啥大问题，数据量不多的情况下程序跑起来没有任何毛病。</p>
+<p>但是，如果数据量多起来了，一次性把所有初始化状态的订单都拿出来，是不是有点不合理了，万一把内存给你撑爆了怎么办？</p>
+<p>所以，在我已知数据量会很大的情况下，我采取了分批次获取数据的模式，假设一次性取 100 条数据出来玩。</p>
+<p>那么 SQL 就是这样的：</p>
+<p>select * from order where order_status=0 order by create_time limit 100;</p>
+<p>所以上面的伪代码会变成这样：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">while</span>(<span class="literal">true</span>)&#123;</span><br><span class="line">    <span class="comment">//获取订单状态为初始化的数据(0:初始化 1:处理中 2:成功 3:失败)</span></span><br><span class="line">    <span class="comment">//select * from order where order_status=0 order by create_time limit 100;</span></span><br><span class="line">    <span class="type">ArrayList</span> <span class="variable">initOrderInfoList</span> <span class="operator">=</span> queryInitOrderInfoList();</span><br><span class="line">    <span class="comment">//循环处理这批数据</span></span><br><span class="line">    <span class="keyword">for</span>(OrderInfo orderInfo : initOrderInfoList)&#123;</span><br><span class="line">        <span class="comment">//捕获异常以免一条数据错误导致循环结束</span></span><br><span class="line">        <span class="keyword">try</span>&#123;</span><br><span class="line">            <span class="comment">//发起rpc调用</span></span><br><span class="line">            <span class="type">String</span> <span class="variable">orderStatus</span> <span class="operator">=</span> queryOrderStatus(orderInfo.getOrderId);</span><br><span class="line">            <span class="comment">//更新订单状态</span></span><br><span class="line">            updateOrderInfo(orderInfo.getOrderId,orderStatus);    </span><br><span class="line">        &#125; <span class="keyword">catch</span> (Exception e)&#123;</span><br><span class="line">            <span class="comment">//打印异常</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>来，你又来告诉我上面这一段逻辑有什么问题？</p>
+<p><img src="https://s2.loli.net/2024/09/07/xYMkIG7nNe3zVUD.png" alt="19a79b96894403661988ac3cc9b0165e.png"></p>
+<p>作为程序员，我们看到 while(true) 这样的写法立马就要警报拉满，看看有没有死循环的风险。</p>
+<p>那你说上面这段代码在什么时候退不出来？</p>
+<p>当有任何一条数据的状态没有从初始化变成成功、失败或者处理中的时候，就会导致一直循环。</p>
+<p>而虽然发起 RPC 调用的地方，服务提供方能确保返回的状态一定是成功、失败、处理中这三者之中的一个，但是这个有一个前提是接口调用正常的情况下。</p>
+<p>如果接口调用一旦异常，那么按照上面的写法，在抛出异常后，状态并未发生变化，还会是停留在“初始化”，从而导致死循环。</p>
+<p>当年，测试同学在测试阶段直接就测出了这个问题，然后我对其进行了修改。</p>
+<p>我改变了思路，把每次分批次查询 100 条数据，修改为了分页查询，引入了 PageHelper 插件：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="comment">//是否是最后一页</span></span><br><span class="line"><span class="keyword">while</span>(pageInfo.isLastPage)&#123;</span><br><span class="line">    pageNum=pageNum+<span class="number">1</span>;</span><br><span class="line">    <span class="comment">//获取订单状态为初始化的数据(0:初始化 1:处理中 2:成功 3:失败)</span></span><br><span class="line">    <span class="comment">//select * from order where order_status=0 order by create_time limit pageNum*100,100;</span></span><br><span class="line">    PageHelper.startPage(pageNum,<span class="number">100</span>);</span><br><span class="line">    <span class="type">ArrayList</span> <span class="variable">initOrderInfoList</span> <span class="operator">=</span> queryInitOrderInfoList();</span><br><span class="line">    pageInfo = <span class="keyword">new</span> <span class="title class_">PageInfo</span>(initOrderInfoList);</span><br><span class="line">    <span class="comment">//循环处理这批数据</span></span><br><span class="line">    <span class="keyword">for</span>(OrderInfo orderInfo : initOrderInfoList)&#123;</span><br><span class="line">        <span class="comment">//捕获异常以免一条数据错误导致循环结束</span></span><br><span class="line">        <span class="keyword">try</span>&#123;</span><br><span class="line">            <span class="comment">//发起rpc调用</span></span><br><span class="line">            <span class="type">String</span> <span class="variable">orderStatus</span> <span class="operator">=</span> queryOrderStatus(orderInfo.getOrderId);</span><br><span class="line">            <span class="comment">//更新订单状态</span></span><br><span class="line">            updateOrderInfo(orderInfo.getOrderId,orderStatus);    </span><br><span class="line">        &#125; <span class="keyword">catch</span> (Exception e)&#123;</span><br><span class="line">            <span class="comment">//打印异常</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>跳出循环的条件为判断当前页是否是最后一页。</p>
+<p>由于每循环一次，当前页就加一，那么理论上讲一定会是翻到最后一页的，没有任何毛病，对不对？</p>
+<p>我们可以分析一下上面的代码逻辑。</p>
+<p>假设，我们有 120 条 order_status=0 的数据。</p>
+<p>那么第一页，取出了 100 条数据：</p>
+<blockquote>
+<p>SELECT * from order_info WHERE order_status=0 LIMIT 0,100;</p>
+</blockquote>
+<p>这 100 条处理完成之后，第二页还有数据吗？</p>
+<p>第二页对应的 sql 为：</p>
+<blockquote>
+<p>SELECT * from order_info WHERE order_status=0 LIMIT 100,100;</p>
+</blockquote>
+<p>但是这个时候，状态为 0 的数据，只有 20 条了，而分页要从第 100 条开始，是不是获取不到数据，导致遗漏数据了？</p>
+<p>确实一定会翻到最后一页，解决了死循环的问题，但又有大量的数据遗漏怎么办呢？</p>
+<p><img src="https://s2.loli.net/2024/09/07/qLim248NEdbJDyF.png" alt="b8403afbd878e718ff318ac80bf80774.png"></p>
+<p>当时我苦思冥想，想到一个办法：导致数据遗漏的原因是因为我在翻页的时候，数据状态在变化，导致总体数据在变化。</p>
+<p>那么如果我每次都从后往前取数据，每次都固定取最后一页，能取到数据就代表还有数据要处理，循环结束条件修改为“当前页即是第一页，也是最后一页时”就结束，这样不就不会遗漏数据了？</p>
+<p>我再给你分析一下。</p>
+<p>假设，我们有 120 条 order_status=0 的数据，从后往前取了 100 天出来进行出来，有 90 条处理成功，10 条的状态还是停留在“处理中”。</p>
+<p>第二次再取的时候，会把剩下的 20 条和这次“处理中”的 10 条，共计 30 条再次取出来进行处理。</p>
+<p>确保没有数据遗漏。</p>
+<p>后来测试环节验收通过了，这个方案上线之后，也确实没有遗漏过数据了。</p>
+<p>直到后来又一天，提供 queryOrderStatus 接口的服务异常了，我发过去的请求超时了。</p>
+<p>导致我取出来的数据，每一条都会抛出异常，都不会更新状态。从而导致我每次从后往前取数据，都取到的是同一批数据。</p>
+<p>从程序上的表现上看，日志疯狂的打印，但是其实一直在处理同一批，就是死循环了。</p>
+<p>好在我当时还在新手保护期，领导帮我扛下来了。</p>
+<p>最后随着业务的发展，这块逻辑也完全发生了变化，逻辑由我们主动去调用 RPC 接口查询状态变成了，下游状态变化后进行 MQ 主动通知，所以我这一坨骚代码也就随之光荣下岗。</p>
+<p>我现在想了一下，其实这个场景，用分页的思想去取数据真的不好做。</p>
+<p>还不如用最开始的分批次的思想，只不过在会变化的“状态”之外，再加上另外一个不会改变的限定条件，比如常见的创建时间：</p>
+<blockquote>
+<p>select * from order where order_status=0 and create_time&gt;xxx order by create_time limit 100;</p>
+</blockquote>
+<p>最好不要基于状态去做分页，如果一定要基于状态去做分页，那么要确保状态在分页逻辑里面会扭转下去。</p>
+<p>这就是我职业生涯的第一个生产 BUG，一个低级的分页逻辑错误。</p>
+<h2 id="还是分页，又踩到坑"><a href="#还是分页，又踩到坑" class="headerlink" title="还是分页，又踩到坑"></a>还是分页，又踩到坑</h2><p>这也是在工作的前两年遇到的一个关于分页的坑。</p>
+<p>最开始在学校的时候，大家肯定都手撸过分页逻辑，自己去算总页数，当前页，页面大小啥的。</p>
+<p>当时功力尚浅，觉得这部分逻辑写起来是真复杂，但是扣扣脑袋也还是可以写出来。</p>
+<p>后来参加工作了之后，在项目里面看到了 PageHelper 这个玩意，了解之后发了“斯国一”的惊叹：有了这玩意，谁还手写分页啊。</p>
+<p><img src="https://s2.loli.net/2024/09/07/c7Q9jVrTCs5MNAX.png" alt="fc2d639d2ab7ed6589fcf15aa3bcb2ee.png"></p>
+<p>但是我在使用 PageHelper 的时候，也踩到过一个经典的“坑”。</p>
+<p>最开始的时候，代码是这样的：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line">PageHelper.startPage(pageNum,<span class="number">100</span>);</span><br><span class="line">List&lt;OrderInfo&gt; list = orderInfoMapper.select(param1);</span><br><span class="line">后来为了避免不带 where 条件的全表查询，我把代码修改成了这样：</span><br><span class="line"></span><br><span class="line">PageHelper.startPage(pageNum,<span class="number">100</span>);</span><br><span class="line"><span class="keyword">if</span>(param != <span class="literal">null</span>)&#123;</span><br><span class="line">    List&lt;OrderInfo&gt; list = orderInfoMapper.select(param);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>然后，随着程序的迭代，就出 BUG 了。因为有的业务场景下，param 参数一路传递进来之后就变成了 null。</p>
+<p>但是这个时候 PageHelper 已经在当前线程的 ThreadLocal 里面设置了分页参数了，但是没有被消费，这个参数就会一直保留在这个线程上，也就是放在线程的 ThreadLocal 里面。</p>
+<p>当这个线程继续往后跑，或者被复用的时候，遇到一条 SQL 语句时，就可能导致不该分页的方法去消费这个分页参数，产生了莫名其妙的分页。</p>
+<p>所以，上面这个代码，应该写成下面这个样子：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">if</span>(param != <span class="literal">null</span>)&#123;</span><br><span class="line">    PageHelper.startPage(pageNum,<span class="number">100</span>);</span><br><span class="line">    List&lt;OrderInfo&gt; list = orderInfoMapper.select(param);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>也是这次踩坑之后，我翻阅了 PageHelper 的源码，了解了底层原理，并总结了一句话：需要保证在 PageHelper 方法调用后紧跟 MyBatis 查询方法，否则会污染线程。</p>
+<p>在正确使用 PageHelper 的情况下，其插件内部，会在 finally 代码段中自动清除了在 ThreadLocal 中存储的对象。</p>
+<p>这样就不会留坑。</p>
+<p>这次翻页源码的过程影响也是比较深刻的，虽然那个时候经验不多，但是得益于 MyBatis 的源码和 PageHelper 的源码写的都非常的符合正常人的思维，阅读起来门槛不高，再加上我有具体的疑问，所以那是一次古早时期，尚在新手村时，为数不多的，阅读源码之后，感觉收获满满的经历。</p>
+<h2 id="分页丢数据"><a href="#分页丢数据" class="headerlink" title="分页丢数据"></a>分页丢数据</h2><p>关于这个 BUG 可以说是印象深刻了。</p>
+<p>当年遇到这个坑的时候排查了很长时间没啥头绪，最后还是组里的大佬指了条路。</p>
+<p>业务需求很简单，就是在管理页面上可以查询订单列表，查询结果按照订单的创建时间倒序排序。</p>
+<p>对应的分页 SQL 很简单，很常规，没有任何问题：</p>
+<blockquote>
+<p>select * from table order by create_time desc limit 0,10;</p>
+</blockquote>
+<p>但是当年在页面上的表现大概是这样的：</p>
+<p><img src="https://s2.loli.net/2024/09/07/klutvw35YPyLn7H.png" alt="68450750f60bb606e3367ea0a9a9cf7d.png"></p>
+<p>订单编号为 5 的这条数据，会同时出现在了第一页和第二页。</p>
+<p>甚至有的数据在第二页出现了之后，在第五页又出现一次。</p>
+<p>后来定位到产生这个问题的原因是因为有一批数量不小的订单数据是通过线下执行 SQL 的方式导入的。</p>
+<p>而导入的这一批数据，写 SQL 的同学为了方便，就把 create_time 都设置为了同一个值，比如都设置为了 2023-09-10 12:34:56 这个时间。</p>
+<p>由于 create_time 又是我作为 order by 的字段，当这个字段的值大量都是同一个值的时候，就会导致上面的一条数据在不同的页面上多次出现的情况。</p>
+<p>针对这个现象，当时组里的大佬分析明白之后，扔给我一个链接：</p>
+<blockquote>
+<p>tps://dev.mysql.com/doc/refman/5.7/en/limit-optimization.html</p>
+</blockquote>
+<p>这是 MySQL 官方文档，这一章节叫做“对 Limit 查询的优化”。</p>
+<p>开篇的时候人家就是这样说的：</p>
+<p><img src="https://s2.loli.net/2024/09/07/DqnUfNQEZsgcka1.png" alt="1d097f852416aada73d2d8cc8977175a.png"></p>
+<p>如果将 LIMIT row_count 和 ORDER BY 组合在一起，那么 MySQL 在找到排序结果的第一行 count 行时就停止排序，而不是对整个结果进行排序。</p>
+<p>然后给了这一段补充说明：</p>
+<p><img src="https://s2.loli.net/2024/09/07/t4jy1pCUPQX6FYn.png" alt="0e4d174aa81fa64dae80186235c193b8.png"></p>
+<p>如果多条记录的 ORDER BY 列中有相同的值，服务器可以自由地按任何顺序返回这些记录，并可能根据整体执行计划的不同而采取不同的方式。</p>
+<p>换句话说，相对于未排序列，这些记录的排序顺序是 nondeterministic 的：</p>
+<p><img src="https://s2.loli.net/2024/09/07/Q6VxDXU5YnhGELJ.png" alt="75168cf00066e77f6bf69b2bc5beba8c.png"></p>
+<p>然后官方给了一个示例。</p>
+<p>首先，不带 limit 的时候查询结果是这样的：</p>
+<p><img src="https://s2.loli.net/2024/09/07/p3mI5tvMJEdskS4.png" alt="146ac942069c1b688ae88e7a46430098.png"></p>
+<p>基于这个结果，如果我要取前五条数据，对应的 id 应该是 1,5,3,4,6。</p>
+<p>但是当我们带着 limit 的时候查询结果可能是这样的：</p>
+<p><img src="https://s2.loli.net/2024/09/07/bWrjN69BqMcESmA.png" alt="6f119329722d3eb8ef823293df548f3d.png"></p>
+<p>对应的 id 实际是 1,5,4,3,6。</p>
+<p>这就是前面说的：如果多条记录的 ORDER BY 列中有相同的值，服务器可以自由地按任何顺序返回这些记录，并可能根据整体执行计划的不同而采取不同的方式。</p>
+<p>从程序上的表现上来看，结果就是 nondeterministic。</p>
+<p>所以看到这里，我们大概可以知道我前面遇到的分页问题的原因是因为那一批手动插入的数据对应的 create_time 字段都是一样的，而 MySQL 这边又对 Limit 参数做了优化，运行结果出现了不确定性，从而页面上出现了重复的数据。</p>
+<p>而回到文章最开始的这个 SQL，也就是我一眼看出问题的这个 SQL：</p>
+<blockquote>
+<p>select * from table order by priority limit 1;</p>
+</blockquote>
+<p>因为在我们的界面上，只是约定了数字越小优先级越高，数字必须大于 0。</p>
+<p>所以当大家在输入优先级的时候，大部分情况下都默认自己编辑的数据对应的优先级最高，也就是设置为 1，从而导致数据库里面有大量的优先级为 1 的数据。</p>
+<p>而程序每次处理，又只会按照优先级排序只会，取一条数据出来进行处理。</p>
+<p>经过前面的分析我们可以知道，这样取出来的数据，不一定每次都一样。</p>
+<p>所以由于有这段代码的存在，导致业务上的表现就很奇怪，明明是一模一样的请求参数，但是最终返回的结果可能不相同。</p>
+<p>好，现在，我问你，你说在前面，我给出的这样的分页查询的 SQL 语句有没有毛病？</p>
+<blockquote>
+<p>select * from table order by create_time desc limit 0,10;</p>
+</blockquote>
+<p>没有任何毛病嘛，执行结果也没有任何毛病？</p>
+<p>有没有给你按照 create_time 排序？</p>
+<p>摸着良心说，是有的。</p>
+<p>有没有给你取出排序后的 10 条数据？</p>
+<p>也是有的。</p>
+<p>所以，针对这种现象，官方的态度是：我没错！在我的概念里面，没有“分页”这样的玩意，你通过组合我提供的功能，搞出了“分页”这种业务场景，现在业务场景出问题了，你反过来说我底层有问题？</p>
+<p>这不是欺负老实人吗？我没错！</p>
+<p><img src="https://s2.loli.net/2024/09/07/8eLazSxNowjrk7s.png" alt="d0b04ec8a2c260f9c220dee3a8cdcd6e.png"></p>
+<p>所以，官方把这两种案例都拿出来，并且强调：</p>
+<blockquote>
+<p>在每种情况下，查询结果都是按 ORDER BY 的列进行排序的，这样的结果是符合 SQL 标准的。</p>
+</blockquote>
+<p><img src="https://s2.loli.net/2024/09/07/KqxCb7wR8mBHjiV.png" alt="8d179bc87580a706a7122820193e9148.png"></p>
+<p>虽然我没错，但是我还是可以给你指个路。</p>
+<p>如果你非常在意执行结果的顺序，那么在 ORDER BY 子句中包含一个额外的列，以确保顺序具有确定性。</p>
+<p>例如，如果 id 值是唯一的，你可以通过这样的排序使给定类别值的行按 id 顺序出现。</p>
+<p>你这样去写，排序的时候加个 id 字段，就稳了：</p>
+<p><img src="https://s2.loli.net/2024/09/07/zbA9ups1SECxdmJ.png" alt="81071450aea9b1d81a33f509527842ba.png"></p>
+]]></content>
+      <categories>
+        <category>mysql</category>
+      </categories>
+      <tags>
+        <tag>mysql</tag>
       </tags>
   </entry>
 </search>

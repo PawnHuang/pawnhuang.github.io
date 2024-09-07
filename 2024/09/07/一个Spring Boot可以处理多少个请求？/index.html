@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.2">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<link rel="stylesheet" href="//fonts.googleapis.com/css?family=Lato:300,300italic,400,400italic,700,700italic|Lobster Two:300,300italic,400,400italic,700,700italic|PT Mono:300,300italic,400,400italic,700,700italic&display=swap&subset=latin,latin-ext">
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"pawnhuang.github.io","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="一个 SpringBoot 项目能同时处理多少请求？ 不知道你听到这个问题之后的第一反应是什么。 我大概知道他要问的是哪个方向，但是对于这种只有一句话的面试题，我的第一反应是：会不会有坑？ 所以并不会贸然答题，先追问一些消息，比如：这个项目具体是干什么的？项目大概进行了哪些参数配置？使用的 web 容器是什么？部署的服务器配置如何？有哪些接口？接口响应平均时间大概是多少？ 这样，在几个问题的拉扯之">
+<meta property="og:type" content="article">
+<meta property="og:title" content="一个 SpringBoot 项目能同时处理多少请求？">
+<meta property="og:url" content="https://pawnhuang.github.io/2024/09/07/%E4%B8%80%E4%B8%AASpring%20Boot%E5%8F%AF%E4%BB%A5%E5%A4%84%E7%90%86%E5%A4%9A%E5%B0%91%E4%B8%AA%E8%AF%B7%E6%B1%82%EF%BC%9F/index.html">
+<meta property="og:site_name" content="Fake it till you make it">
+<meta property="og:description" content="一个 SpringBoot 项目能同时处理多少请求？ 不知道你听到这个问题之后的第一反应是什么。 我大概知道他要问的是哪个方向，但是对于这种只有一句话的面试题，我的第一反应是：会不会有坑？ 所以并不会贸然答题，先追问一些消息，比如：这个项目具体是干什么的？项目大概进行了哪些参数配置？使用的 web 容器是什么？部署的服务器配置如何？有哪些接口？接口响应平均时间大概是多少？ 这样，在几个问题的拉扯之">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716173852.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716105209.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716104148.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716104407.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/07/YtPoiNdFWc3jSTC.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/07/I16NuhVc3oBfWzk.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/07/UyuIOjo7tNg4cRP.png">
+<meta property="og:image" content="e:/blog/images/springboot%E9%A1%B9%E7%9B%AE%E5%8F%AF%E4%BB%A5%E6%8E%A5%E5%8F%97%E5%A4%9A%E5%B0%91%E8%AF%B7%E6%B1%82/20240907-3.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716174117.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716174231.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/07/8Zh4nIFHKdAUyTS.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/07/J74KNC8kDqj6zET.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716113346.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716120846.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716132249.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716132830.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716164409.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/07/QmX28j75gzANbdr.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716133352.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716174538.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/07/ae2EQNXmABFIpL7.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716141941.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716141541.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716142645.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716142935.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716174728.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716143324.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716143607.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716144049.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716141541.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716154330.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716160608.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716161005.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716180537.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716163334.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716163620.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716163826.png">
+<meta property="og:image" content="https://s2.loli.net/2024/09/07/NUzx4mE1WL9dpou.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716165004.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716170419.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716170701.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716170808.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716170937.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716171232.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716171424.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716171520.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716171629.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716180859.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230716210625.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230716212906.png">
+<meta property="article:published_time" content="2024-09-07T13:42:51.000Z">
+<meta property="article:modified_time" content="2024-09-07T13:13:31.894Z">
+<meta property="article:author" content="Pawn Huang">
+<meta property="article:tag" content="多线程">
+<meta property="article:tag" content="八股文">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716173852.png">
+
+<link rel="canonical" href="https://pawnhuang.github.io/2024/09/07/%E4%B8%80%E4%B8%AASpring%20Boot%E5%8F%AF%E4%BB%A5%E5%A4%84%E7%90%86%E5%A4%9A%E5%B0%91%E4%B8%AA%E8%AF%B7%E6%B1%82%EF%BC%9F/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>一个 SpringBoot 项目能同时处理多少请求？ | Fake it till you make it</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Fake it till you make it</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Pawn Huang's Blog</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://pawnhuang.github.io/2024/09/07/%E4%B8%80%E4%B8%AASpring%20Boot%E5%8F%AF%E4%BB%A5%E5%A4%84%E7%90%86%E5%A4%9A%E5%B0%91%E4%B8%AA%E8%AF%B7%E6%B1%82%EF%BC%9F/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/upload/avatar.png">
+      <meta itemprop="name" content="Pawn Huang">
+      <meta itemprop="description" content="一个非典型程序员">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Fake it till you make it">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          一个 SpringBoot 项目能同时处理多少请求？
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+              
+
+              <time title="创建时间：2024-09-07 21:42:51 / 修改时间：21:13:31" itemprop="dateCreated datePublished" datetime="2024-09-07T21:42:51+08:00">2024-09-07</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%8A%80%E6%9C%AF/" itemprop="url" rel="index"><span itemprop="name">技术</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">本文字数：</span>
+              <span>9.5k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">阅读时长 &asymp;</span>
+              <span>9 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>一个 SpringBoot 项目能同时处理多少请求？</p>
+<p>不知道你听到这个问题之后的第一反应是什么。</p>
+<p>我大概知道他要问的是哪个方向，但是对于这种只有一句话的面试题，我的第一反应是：会不会有坑？</p>
+<p>所以并不会贸然答题，先追问一些消息，比如：这个项目具体是干什么的？项目大概进行了哪些参数配置？使用的 web 容器是什么？部署的服务器配置如何？有哪些接口？接口响应平均时间大概是多少？</p>
+<p>这样，在几个问题的拉扯之后，至少在面试题考察的方向方面能基本和面试官达成了一致。</p>
+<p>比如前面的面试问题，经过几次拉扯之后，面试官可能会修改为：</p>
+<blockquote>
+<p>一个 SpringBoot 项目，未进行任何特殊配置，全部采用默认设置，这个项目同一时刻，最多能同时处理多少请求？</p>
+</blockquote>
+<p>能处理多少呢？</p>
+<p>我也不知道，但是当问题变成上面这样之后，我找到了探索答案的角度。</p>
+<p>既然“未进行任何特殊配置”，那我自己搞个 Demo 出来，压一把不就完事了吗？</p>
+<p>坐稳扶好，准备发车。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716173852.png" alt="img"></p>
+<h2 id="Demo"><a href="#Demo" class="headerlink" title="Demo"></a><strong>Demo</strong></h2><p>小手一抖，先搞个 Demo 出来。</p>
+<p>这个 Demo 非常的简单，就是通过 idea 创建一个全新的 SpringBoot 项目就行。</p>
+<p><strong>我的 SpringBoot 版本使用的是 2.7.13。</strong></p>
+<p>整个项目只有这两个依赖：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716105209.png" alt="img"></p>
+<p>整个项目也只有两个类，要得就是一个空空如也，一清二白。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716104148.png" alt="img"></p>
+<p>项目中的 TestController，里面只有一个 getTest 方法，用来测试，方法里面接受到请求之后直接 sleep 一小时。</p>
+<p>目的就是直接把当前请求线程占着，这样我们才能知道项目中一共有多少个线程可以使用：</p>
+<figure class="highlight less"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="variable">@Slf4j</span></span><br><span class="line"><span class="variable">@RestController</span></span><br><span class="line">public class TestController &#123;</span><br><span class="line"></span><br><span class="line">    <span class="variable">@GetMapping</span>(<span class="string">&quot;/getTest&quot;</span>)</span><br><span class="line">    public void <span class="built_in">getTest</span>(int num) throws Exception &#123;</span><br><span class="line">        <span class="selector-tag">log</span><span class="selector-class">.info</span>(<span class="string">&quot;&#123;&#125; 接受到请求:num=&#123;&#125;&quot;</span>, Thread.<span class="built_in">currentThread</span>().<span class="built_in">getName</span>(), num);</span><br><span class="line">        <span class="selector-tag">TimeUnit</span><span class="selector-class">.HOURS</span><span class="selector-class">.sleep</span>(<span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>项目中的 application.properties 文件也是空的：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716104407.png" alt="img"></p>
+<p>这样，一个“未进行任何特殊配置”的 SpringBoot 不就有了吗？</p>
+<p>基于这个 Demo，前面的面试题就要变成了：我短时间内不断的调用这个 Demo 的 getTest 方法，最多能调用多少次？</p>
+<p>问题是不是又变得更加简单了一点？</p>
+<p>那么前面这个“短时间内不断的调用”，用代码怎么表示呢？</p>
+<p>很简单，就是在循环中不断的进行接口调用就行了。</p>
+<figure class="highlight csharp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">main</span>(<span class="params">String[] args</span>)</span> &#123;</span><br><span class="line">        RestTemplate restTemplate = <span class="keyword">new</span> RestTemplate();</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">        <span class="keyword">for</span> (<span class="built_in">int</span> i = <span class="number">0</span>; i &lt; <span class="number">1000</span>; i++) &#123;</span><br><span class="line">            <span class="built_in">int</span> finalI = i;</span><br><span class="line">            <span class="keyword">new</span> Thread(() -&gt; &#123;</span><br><span class="line">                restTemplate.getForObject(<span class="string">&quot;http://127.0.0.1:8080/getTest?num=&quot;</span> + finalI, Integer.<span class="keyword">class</span>);</span><br><span class="line">            &#125;).start();</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">//阻塞主线程</span></span><br><span class="line">        Thread.<span class="keyword">yield</span>();</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>当然了，这个地方你用一些压测工具，比如 jmeter 啥的，会显得逼格更高，更专业。我这里就偷个懒，直接上代码了。</p>
+<h2 id="答案"><a href="#答案" class="headerlink" title="答案"></a><strong>答案</strong></h2><p>经过前面的准备工作，Demo 和测试代码都就绪了。</p>
+<p>接下来就是先把 Demo 跑起来：</p>
+<p><img src="https://s2.loli.net/2024/09/07/YtPoiNdFWc3jSTC.png" alt="image-20240907193556440"></p>
+<p>然后跑一把 MainTest。</p>
+<p>当 MainTest 跑起来之后，Demo 这边就会快速的、大量的输出这样的日志：</p>
+<p><img src="https://s2.loli.net/2024/09/07/I16NuhVc3oBfWzk.png" alt="image-20240907194156820"></p>
+<p>也就是我前面 getTest 方法中写的日志：</p>
+<p><img src="https://s2.loli.net/2024/09/07/UyuIOjo7tNg4cRP.png" alt="image-20240907194212826"></p>
+<p>好，现在我们回到这个问题：</p>
+<blockquote>
+<p>我短时间内不断的调用这个 Demo 的 getTest 方法，最多能调用多少次？</p>
+</blockquote>
+<p>来，请你告诉我怎么得到这个问题的答案？</p>
+<p>我这里就是一个大力出奇迹，直接统计“接受到请求”关键字在日志中出现的次数就行了：</p>
+<p><img src="E:/blog/images/springboot%E9%A1%B9%E7%9B%AE%E5%8F%AF%E4%BB%A5%E6%8E%A5%E5%8F%97%E5%A4%9A%E5%B0%91%E8%AF%B7%E6%B1%82/20240907-3.png" alt="image-20240907200114910"></p>
+<p>很显然，答案就是：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716174117.png" alt="img"></p>
+<p>所以，当面试官问你：一个 SpringBoot 项目能同时处理多少请求？</p>
+<p>你装作仔细思考之后，笃定的说：200 次。</p>
+<p>面试官微微点头，并等着你继续说下去。</p>
+<p>你也暗自欢喜，背了个答案。然后等着面试官继续问其他问题。</p>
+<p>气氛突然就尴尬了起来。</p>
+<p>接着，你就回家等通知了。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716174231.png" alt="img"></p>
+<p>200 次，这个回答是对的，但是你只说 200 次，这个回答就显得有点尬了。</p>
+<p>重要的是，这个值是怎么来的？</p>
+<p>所以，下面这一部分，你也要背下来。</p>
+<h2 id="怎么来的？"><a href="#怎么来的？" class="headerlink" title="怎么来的？"></a><strong>怎么来的？</strong></h2><p>在开始探索怎么来的之前，我先问你一个问题，这个 200 个线程，是谁的线程，或者说是谁在管理这个线程？</p>
+<p>是 SpringBoot 吗？</p>
+<p>肯定不是，SpringBoot 并不是一个 web 容器。</p>
+<p>应该是 Tomcat 在管理这 200 个线程。</p>
+<p>这一点，我们通过线程 Dump 也能进行验证：</p>
+<p><img src="https://s2.loli.net/2024/09/07/8Zh4nIFHKdAUyTS.png" alt="image-20240907200341230"></p>
+<p><img src="https://s2.loli.net/2024/09/07/J74KNC8kDqj6zET.png" alt="image-20240907201353030"></p>
+<p>通过线程 Dump 文件，我们可以知道，大量的线程都在 sleep 状态。而点击这些线程，查看其堆栈消息，可以看到 Tomcat、threads、ThreadPoolExecutor 等关键字：</p>
+<figure class="highlight mipsasm"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">at</span> <span class="keyword">org.apache.Tomcat.util.net.NioEndpoint$SocketProcessor.doRun(NioEndpoint.java:1791)</span></span><br><span class="line"><span class="keyword"></span><span class="built_in">at</span> <span class="keyword">org.apache.Tomcat.util.net.SocketProcessorBase.run(SocketProcessorBase.java:52)</span></span><br><span class="line"><span class="keyword"></span><span class="built_in">at</span> <span class="keyword">org.apache.Tomcat.util.threads.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1191)</span></span><br><span class="line"><span class="keyword"></span><span class="built_in">at</span> <span class="keyword">org.apache.Tomcat.util.threads.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:659)</span></span><br><span class="line"><span class="keyword"></span><span class="built_in">at</span> <span class="keyword">org.apache.Tomcat.util.threads.TaskThread$WrappingRunnable.run(TaskThread.java:61)</span></span><br></pre></td></tr></table></figure>
+
+<p>基于“短时间内有 200 个请求被立马处理的”这个现象，结合你背的滚瓜烂熟的、非常扎实的线程池知识，你先大胆的猜一个：Tomcat 默认核心线程数是 200。</p>
+<p>接下来，我们就是要去源码里面验证这个猜测是否正确了。</p>
+<p>教你一个不用打断点也能获取到调用栈的方法。</p>
+<p>在前面已经展示过了，就是线程 Dump。</p>
+<p>右边就是一个线程完整的调用栈：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716113346.png" alt="img"></p>
+<p>从这个调用栈中，由于我们要找的是 Tomcat 线程池相关的源码，所以第一次出现相关关键字的地方就是这一行：</p>
+<blockquote>
+<p>org.apache.Tomcat.util.threads.ThreadPoolExecutor.Worker#run</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716120846.png" alt="img"></p>
+<p>然后我们在这一行打上断点。</p>
+<p>重启项目，开始调试。</p>
+<p>进入 runWorker 之后，这部分代码看起来就非常眼熟了：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716132249.png" alt="img"></p>
+<p>简直和 JDK 里面的线程池源码一模一样。</p>
+<p>如果你熟悉 JDK 线程池源码的话，调试 Tomcat 的线程池，那个感觉，就像是回家一样。</p>
+<p>如果你不熟悉的话，我建议你尽快去熟悉熟悉。</p>
+<p>随着断点往下走，在 getTask 方法里面，可以看到关于线程池的几个关键参数：</p>
+<blockquote>
+<p>org.apache.Tomcat.util.threads.ThreadPoolExecutor#getTask</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716132830.png" alt="img"></p>
+<p>corePoolSize，核心线程数，值为 10。</p>
+<p>maximumPoolSize，最大线程数，值为 200。</p>
+<p>而且基于 maximumPoolSize 这个参数，你往前翻代码，会发现这个默认值就是 200：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716164409.png" alt="img"></p>
+<p>好，到这里，你发现你之前猜测的“Tomcat 默认核心线程数是 200”是不对的。</p>
+<p>但是你一点也不慌，再次结合你背的滚瓜烂熟的、非常扎实的线程池知识。</p>
+<p>并在心里又默念了一次：当线程池接受到任务之后，先启用核心线程数，再使用队列长度，最后启用最大线程数。</p>
+<p>因为我们前面验证了，Tomcat 可以同时间处理 200 个请求，而它的线程池核心线程数只有 10，最大线程数是 200。</p>
+<p>这说明，我前面这个测试用例，把队列给塞满了，从而导致 Tomcat 线程池启用了最大线程数：</p>
+<p><img src="https://s2.loli.net/2024/09/07/QmX28j75gzANbdr.png" alt="image-20240907202222717"></p>
+<p>嗯，一定是这样的！</p>
+<p>那么，现在的关键问题就是：Tomcat 线程池默认的队列长度是多少呢？</p>
+<p>在当前的这个 Debug 模式下，队列长度可以通过 Alt+F8 进行查看：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716133352.png" alt="img"></p>
+<p>wc，这个值是 Integer.MAX_VALUE，这么大？</p>
+<p>我一共也才 1000 个任务，不可能被占满啊？</p>
+<p>一个线程池：</p>
+<ul>
+<li>核心线程数，值为 10。</li>
+<li>最大线程数，值为 200。</li>
+<li>队列长度，值为 Integer.MAX_VALUE。</li>
+</ul>
+<p>1000 个比较耗时的任务过来之后，应该是只有 10 个线程在工作，然后剩下的 990 个进队列才对啊？</p>
+<p>难道我八股文背错了？</p>
+<p>这个时候不要慌，嗦根辣条冷静一下。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716174538.png" alt="img"></p>
+<p>目前已知的是核心线程数，值为 10。这 10 个线程的工作流程是符合我们认知的。</p>
+<p>但是第 11 个任务过来的时候，本应该进入队列去排队。</p>
+<p>现在看起来，是直接启用最大线程数了。</p>
+<p>所以，我们先把测试用例修改一下：</p>
+<p><img src="https://s2.loli.net/2024/09/07/ae2EQNXmABFIpL7.png" alt="image-20240907202320321"></p>
+<p>那么问题就来了：最后一个请求到底是怎么提交到线程池里面的？</p>
+<p>前面说了，Tomcat 的线程池源码和 JDK 的基本一样。</p>
+<p>往线程池里面提交任务的时候，会执行 execute 这个方法：</p>
+<blockquote>
+<p>org.apache.Tomcat.util.threads.ThreadPoolExecutor#execute(java.lang.Runnable)</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716141941.png" alt="img"></p>
+<p>对于 Tomcat 它会调用到 executeInternal 这个方法：</p>
+<blockquote>
+<p>org.apache.Tomcat.util.threads.ThreadPoolExecutor#executeInternal</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716141541.png" alt="img"></p>
+<p>这个方法里面，标号为 ① 的地方，就是判断当前工作线程数是否小于核心线程数，小于则直接调用 addWorker 方法，创建线程。</p>
+<p>标号为 ② 的地方主要是调用了 offer 方法，看看队列里面是否还能继续添加任务。</p>
+<p>如果不能继续添加，说明队列满了，则来到标号为 ③ 的地方，看看是否能执行 addWorker 方法，创建非核心线程，即启用最大线程数。</p>
+<p>把这个逻辑捋顺之后，接下来我们应该去看哪部分的代码，就很清晰了。</p>
+<p>主要就是去看 workQueue.offer(command) 这个逻辑。</p>
+<p>如果返回 true 则表示加入到队列，返回 false 则表示启用最大线程数嘛。</p>
+<p>这个 workQueue 是 TaskQueue，看起来一点也不眼熟：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716142645.png" alt="img"></p>
+<p>当然不眼熟了，因为这个是 Tomcat 自己基于 LinkedBlockingQueue 搞的一个队列。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716142935.png" alt="img"></p>
+<p>问题的答案就藏在 TaskQueue 的 offer 方法里面。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716174728.png" alt="img"></p>
+<p>所以我重点带你盘一下这个 offer 方法：</p>
+<blockquote>
+<p>org.apache.Tomcat.util.threads.TaskQueue#offer</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716143324.png" alt="img"></p>
+<p>标号为 ① 的地方，判断了 parent 是否为 null，如果是则直接调用父类的 offer 方法。说明要启用这个逻辑，我们的 parent 不能为 null。</p>
+<p>那么这个 parent 是什么玩意，从哪里来的呢？</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716143607.png" alt="img"></p>
+<p>parent 就是 Tomcat 线程池，通过其 set 方法可以知道，是在线程池完成初始化之后，进行了赋值。</p>
+<p>也就是说，你可以理解为，在 Tomcat 的场景下，parent 不会为空。</p>
+<p>标号为 ② 的地方，调用了 getPoolSizeNoLock 方法：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716144049.png" alt="img"></p>
+<p>这个方法是获取当前线程池中有多个线程。</p>
+<p>所以如果这个表达式为 true：</p>
+<blockquote>
+<p>parent.getPoolSizeNoLock() == parent.getMaximumPoolSize()</p>
+</blockquote>
+<p>就表明当前线程池的线程数已经是配置的最大线程数了，那就调用 offer 方法，把当前请求放到到队列里面去。</p>
+<p>标号为 ③ 的地方，是判断已经提交到线程池里面待执行或者正在执行的任务个数，是否比当前线程池的线程数还少。</p>
+<p>如果是，则说明当前线程池有空闲线程可以执行任务，则把任务放到队列里面去，就会被空闲线程给取走执行。</p>
+<p>然后，关键的来了，标号为 ④ 的地方。</p>
+<p>如果当前线程池的线程数比线程池配置的最大线程数还少，则返回 false。</p>
+<p>前面说了，offer 方法返回 false，会出现什么情况？</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716141541.png" alt="img"></p>
+<p>是不是直接开始到上图中标号为 ③ 的地方，去尝试添加非核心线程了？</p>
+<p>也就是启用最大线程数这个配置了。</p>
+<p>所以，朋友们，这个是什么情况？</p>
+<p>这个情况确实就和我们背的线程池的八股文不一样了啊。</p>
+<p>JDK 的线程池，是先使用核心线程数配置，接着使用队列长度，最后再使用最大线程配置。</p>
+<p>Tomcat 的线程池，就是先使用核心线程数配置，再使用最大线程配置，最后才使用队列长度。</p>
+<p>所以，以后当面试官给你说：我们聊聊线程池的工作机制吧？</p>
+<p>你就先追问一句：你是说的 JDK 的线程池呢还是 Tomcat 的线程池呢，因为这两个在运行机制上有一点差异。</p>
+<p>然后，你就看他的表情。</p>
+<p>如果透露出一丝丝迟疑，然后轻描淡写的说一句：那就对比着说一下吧。</p>
+<p>那么恭喜你，在这个题目上开始掌握了一点主动权。</p>
+<p>最后，为了让你更加深刻的理解到 Tomcat 线程池和 JDK 线程池的不一样，我给你搞一个直接复制过去就能运行的代码。</p>
+<p>当你把 taskqueue.setParent(executor) 这行代码注释掉的时候，它的运行机制就是 JDK 的线程池。</p>
+<p>当存在这行代码的时候，它的运行机制就变成了 Tomcat 的线程池。</p>
+<p>玩去吧。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> org.apache.tomcat.util.threads.TaskQueue;</span><br><span class="line"><span class="keyword">import</span> org.apache.tomcat.util.threads.TaskThreadFactory;</span><br><span class="line"><span class="keyword">import</span> org.apache.tomcat.util.threads.ThreadPoolExecutor;</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> java.util.concurrent.TimeUnit;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">TomcatThreadPoolExecutorTest</span> &#123;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">main</span><span class="params">(String[] args)</span> <span class="keyword">throws</span> InterruptedException &#123;</span><br><span class="line">        <span class="type">String</span> <span class="variable">namePrefix</span> <span class="operator">=</span> <span class="string">&quot;歪歪歪-exec-&quot;</span>;</span><br><span class="line">        <span class="type">boolean</span> <span class="variable">daemon</span> <span class="operator">=</span> <span class="literal">true</span>;</span><br><span class="line">        <span class="type">TaskQueue</span> <span class="variable">taskqueue</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">TaskQueue</span>(<span class="number">300</span>);</span><br><span class="line">        <span class="type">TaskThreadFactory</span> <span class="variable">tf</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">TaskThreadFactory</span>(namePrefix, daemon, Thread.NORM_PRIORITY);</span><br><span class="line">        <span class="type">ThreadPoolExecutor</span> <span class="variable">executor</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">ThreadPoolExecutor</span>(<span class="number">5</span>,</span><br><span class="line">                <span class="number">150</span>, <span class="number">60000</span>, TimeUnit.MILLISECONDS, taskqueue, tf);</span><br><span class="line">        taskqueue.setParent(executor);</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; <span class="number">300</span>; i++) &#123;</span><br><span class="line">            <span class="keyword">try</span> &#123;</span><br><span class="line">                executor.execute(() -&gt; &#123;</span><br><span class="line">                    logStatus(executor, <span class="string">&quot;创建任务&quot;</span>);</span><br><span class="line">                    <span class="keyword">try</span> &#123;</span><br><span class="line">                        TimeUnit.SECONDS.sleep(<span class="number">2</span>);</span><br><span class="line">                    &#125; <span class="keyword">catch</span> (InterruptedException e) &#123;</span><br><span class="line">                        e.printStackTrace();</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;);</span><br><span class="line">            &#125; <span class="keyword">catch</span> (Exception e) &#123;</span><br><span class="line">                e.printStackTrace();</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        Thread.currentThread().join();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">logStatus</span><span class="params">(ThreadPoolExecutor executor, String name)</span> &#123;</span><br><span class="line">        <span class="type">TaskQueue</span> <span class="variable">queue</span> <span class="operator">=</span> (TaskQueue) executor.getQueue();</span><br><span class="line">        System.out.println(Thread.currentThread().getName() + <span class="string">&quot;-&quot;</span> + name + <span class="string">&quot;-:&quot;</span> +</span><br><span class="line">                <span class="string">&quot;核心线程数:&quot;</span> + executor.getCorePoolSize() +</span><br><span class="line">                <span class="string">&quot;\t活动线程数:&quot;</span> + executor.getActiveCount() +</span><br><span class="line">                <span class="string">&quot;\t最大线程数:&quot;</span> + executor.getMaximumPoolSize() +</span><br><span class="line">                <span class="string">&quot;\t总任务数:&quot;</span> + executor.getTaskCount() +</span><br><span class="line">                <span class="string">&quot;\t当前排队线程数:&quot;</span> + queue.size() +</span><br><span class="line">                <span class="string">&quot;\t队列剩余大小:&quot;</span> + queue.remainingCapacity());</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="等等"><a href="#等等" class="headerlink" title="等等"></a><strong>等等</strong></h2><p>如果你之前确实没了解过 Tomcat 线程池的工作机制，那么看到这里的时候也许你会觉得确实是有一点点收获。</p>
+<p>但是，注意我要说但是了。</p>
+<p>还记得最开始的时候面试官的问题吗？</p>
+<p>面试官的原问题就是：一个 SpringBoot 项目能同时处理多少请求？</p>
+<p>那么请问，前面我讲了这么大一坨 Tomcat 线程池运行原理，这个回答，和这个问题匹配吗？</p>
+<p>是的，除了最开始提出的 200 这个数值之外，并不匹配，甚至在面试官的眼里完全是答非所问了。</p>
+<p>所以，为了把这两个“并不匹配”的东西比较顺畅的链接起来，你必须要先回答面试官的问题，然后再开始扩展。</p>
+<p>比如这样答：一个未进行任何特殊配置，全部采用默认设置的 SpringBoot 项目，这个项目同一时刻最多能同时处理多少请求，取决于我们使用的 web 容器，而 SpringBoot 默认使用的是 Tomcat。</p>
+<p>Tomcat 的默认核心线程数是 10，最大线程数 200，队列长度是无限长。但是由于其运行机制和 JDK 线程池不一样，在核心线程数满了之后，会直接启用最大线程数。所以，在默认的配置下，同一时刻，可以处理 200 个请求。</p>
+<p>在实际使用过程中，应该基于服务实际情况和服务器配置等相关消息，对该参数进行评估设置。</p>
+<p>这个回答就算是差不多了。</p>
+<p>但是，如果很不幸，如果你遇到了我，为了验证你是真的自己去摸索过，还是仅仅只是看了几篇文章，我可能还会追问一下：</p>
+<p>那么其他什么都不动，如果我仅仅加入 server.tomcat.max-connections=10 这个配置呢，那么这个时候最多能处理多少个请求？</p>
+<p>你可能就要猜了：10 个。</p>
+<p>是的，我重新提交 1000 个任务过来，在控制台输出的确实是 10 个，</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716154330.png" alt="img"></p>
+<p>那么 max-connections 这个参数它怎么也能控制请求个数呢？</p>
+<p>为什么在前面的分析过程中我们并没有注意到这个参数呢？</p>
+<p>首先我们看一下它的默认值：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716160608.png" alt="img"></p>
+<p>因为它的默认值是 8192，比最大线程数 200 大，这个参数并没有限制到我们，所以我们没有关注到它。</p>
+<p>当我们把它调整为 10 的时候，小于最大线程数 200，它就开始变成限制项了。</p>
+<p>那么 max-connections 这个参数到底是干啥的呢？</p>
+<p>你先自己去摸索摸索吧。</p>
+<p>同时，还有这样的一个参数，默认是 100：</p>
+<blockquote>
+<p>server.tomcat.accept-count=100</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716161005.png" alt="img"></p>
+<p>它又是干什么的呢？</p>
+<p>“和连接数有关”，我只能提示到这里了，自己去摸索吧。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716180537.png" alt="img"></p>
+<h2 id="再等等"><a href="#再等等" class="headerlink" title="再等等"></a><strong>再等等</strong></h2><p>通过前面的分析，我们知道了，要回答“一个 SpringBoot 项目默认能处理的任务数”，这个问题，得先明确其使用的 web 容器。</p>
+<p>那么问题又来了：SpringBoot 内置了哪些容器呢？</p>
+<blockquote>
+<p>Tomcat、Jetty、Netty、Undertow</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716163334.png" alt="img"></p>
+<p>前面我们都是基于 Tomcat 分析的，如果我们换一个容器呢？</p>
+<p>比如换成 Undertow，这个玩意我只是听过，没有实际使用过，它对我来说就是一个黑盒。</p>
+<p>管它的，先换了再说。</p>
+<p>从 Tomcat 换成 Undertow，只需要修改 Maven 依赖即可，其他什么都不需要动：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716163620.png" alt="img"></p>
+<p>再次启动项目，从日志可以发现已经修改为了 Undertow 容器：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716163826.png" alt="img"></p>
+<p>此时我再次执行 MainTest 方法，还是提交 1000 个请求：</p>
+<p><img src="https://s2.loli.net/2024/09/07/NUzx4mE1WL9dpou.png" alt="image-20240907205124756"></p>
+<p>从日志来看，发现只有 48 个请求被处理了。</p>
+<p>就很懵逼，48 是怎么回事儿，怎么都不是一个整数呢，这让强迫症很难受啊。</p>
+<p>这个时候你的想法是什么，是不是想要看看 48 这个数字到底是从哪里来的？</p>
+<p>怎么看？</p>
+<p>之前找 Tomcat 的 200 的时候不是才教了你的嘛，直接往 Undertow 上套就行了嘛。</p>
+<p>打线程 Dump，然后看堆栈消息：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716165004.png" alt="img"></p>
+<p>发现 EnhancedQueueExecutor 这个线程池，接着在这个类里面去找构建线程池时的参数。</p>
+<p>很容易就找到了这个构造方法：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716170419.png" alt="img"></p>
+<p>所以，在这里打上断点，重启项目。</p>
+<p>通过 Debug 可以知道，关键参数都是从 builder 里面来的。</p>
+<p>而 builder 里面，coreSize 和 maxSize 都是 48，队列长度是 Integer.MAX_VALUE。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716170701.png" alt="img"></p>
+<p>所以看一下 Builder 里面的 coreSize 是怎么来的。</p>
+<p>点过来发现 coreSize 的默认值是 16：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716170808.png" alt="img"></p>
+<p>不要慌，再打断点，再重启项目。</p>
+<p>然后你会在它的 setCorePoolSize 方法处停下来，而这个方法的入参就是我们要找的 48：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716170937.png" alt="img"></p>
+<p>顺藤摸瓜，重复几次打断点、重启的动作之后，你会找到 48 是一个名为 WORKER_TASK_CORE_THREADS 的变量，是从这里来的：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716171232.png" alt="img"></p>
+<p>而 WORKER_TASK_CORE_THREADS 这个变量设置的地方是这样的：</p>
+<blockquote>
+<p>io.undertow.Undertow#start</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716171424.png" alt="img"></p>
+<p>而这里的 workerThreads 取值是这样的：</p>
+<blockquote>
+<p>io.undertow.Undertow.Builder#Builder</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716171520.png" alt="img"></p>
+<p>取的是机器的 CPU 个数乘以 8。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716171629.png" alt="img"></p>
+<p>所以我这里是 6*8=48。</p>
+<p>哦，真相大白，原来 48 是这样来的。</p>
+<p>没意思。</p>
+<p>确实没意思，但是既然都已经替换为 Undertow 了，那么你去研究一下它的 NIO ByteBuffer、NIO Channel、BufferPool、XNIO Worker、IO 线程池、Worker 线程池…</p>
+<p>然后再和 Tomcat 对比着学，</p>
+<p>就开始有点意思了。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230716180859.png" alt="img"></p>
+<h2 id="最后再等等"><a href="#最后再等等" class="headerlink" title="最后再等等"></a><strong>最后再等等</strong></h2><p>这篇文章是基于“一个 SpringBoot 项目能同时处理多少请求？”这个面试题出发的。</p>
+<p>但是经过我们前面简单的分析，你也知道，这个问题如果在没有加一些特定的前提条件的情况下，答案是各不一样的。</p>
+<p>比如我再给你举一个例子，还是我们的 Demo，只是使用一下 @Async 注解，其他什么都不变：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230716210625.png" alt="img"></p>
+<p>再次启动项目，发起访问，日志输出变成了这样：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230716212906.png" alt="img"></p>
+<p>同时能处理的请求，直接从 Tomcat 的默认 200 个变成了 8 个？</p>
+<p>因为 @Async 注解对应的线程池，默认的核心线程数是 8。</p>
+<p>所以你看，稍微一变化，答案看起来又不一样了，同时这个请求在内部流转的过程也不一样了，又是一个可以铺开谈的点。</p>
+<p>在面试过程中也是这样的，不要急于答题，当你觉得面试官问题描述的不清楚的地方，你可以先试探性的问一下，看看能不能挖掘出一点他没有说出来的默认条件。</p>
+<p>当“默认条件”挖掘的越多，你的回答就会更容易被面试官接受。而这个挖掘的过程，也是面试过程中一个重要的表现环节。</p>
+<p>而且，有时候，面试官就喜欢给出这样的“模糊”的问题，因为问题越模糊，坑就越多，当面试者跳进自己挖好的坑里面的时候，就是结束一次交锋的时候；当面试者看出来自己挖好的坑，并绕过去的时候，也是结束一轮交锋的时候。</p>
+<p>所以，不要急于答题，多想，多问。不管是对于面试者还是面试官，一个好的面试体验，一定不是没有互动的一问一答，而是一个相互拉锯的过程。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%A4%9A%E7%BA%BF%E7%A8%8B/" rel="tag"># 多线程</a>
+              <a href="/tags/%E5%85%AB%E8%82%A1%E6%96%87/" rel="tag"># 八股文</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2024/09/07/mysql/%E6%9D%A5%E5%95%8A%EF%BC%8C%E5%88%86%E9%A1%B5%E5%95%8A/" rel="prev" title="来啊，分页啊">
+      <i class="fa fa-chevron-left"></i> 来啊，分页啊
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Demo"><span class="nav-number">1.</span> <span class="nav-text">Demo</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AD%94%E6%A1%88"><span class="nav-number">2.</span> <span class="nav-text">答案</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%8E%E4%B9%88%E6%9D%A5%E7%9A%84%EF%BC%9F"><span class="nav-number">3.</span> <span class="nav-text">怎么来的？</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AD%89%E7%AD%89"><span class="nav-number">4.</span> <span class="nav-text">等等</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%86%8D%E7%AD%89%E7%AD%89"><span class="nav-number">5.</span> <span class="nav-text">再等等</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%80%E5%90%8E%E5%86%8D%E7%AD%89%E7%AD%89"><span class="nav-number">6.</span> <span class="nav-text">最后再等等</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Pawn Huang"
+      src="/upload/avatar.png">
+  <p class="site-author-name" itemprop="name">Pawn Huang</p>
+  <div class="site-description" itemprop="description">一个非典型程序员</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">27</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">5</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Pawn Huang</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+    <span title="站点总字数">197k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">2:59</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://pisces.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Pisces</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
