@@ -3030,4 +3030,339 @@ e2.hash &amp; newCap-1
         <tag>mysql</tag>
       </tags>
   </entry>
+  <entry>
+    <title>Spring IoC 核心流程介绍</title>
+    <url>/2024/09/08/mysql/%E6%88%91%E8%AF%95%E5%9B%BE%E6%89%AF%E6%8E%89%E8%BF%99%E6%9D%A1%20SQL%20%E7%9A%84%E5%BA%95%E8%A3%A4/</url>
+    <content><![CDATA[<p><img src="https://s2.loli.net/2024/09/08/Qdfk2t5bcg4Mlse.png" alt="img"></p>
+<p>这次带大家盘一个我觉得有点意思的东西，也是之前写《来啊，分页啊》这篇文章时，遇到的一个神奇的现象，但是当时忙着做文章搞定这个主线任务，就没有去深究这个支线任务。</p>
+<p>现在我们一起把这个支线任务盘一下。</p>
+<h2 id="啥支线任务？"><a href="#啥支线任务？" class="headerlink" title="啥支线任务？"></a><strong>啥支线任务？</strong></h2><p>之前不是写分页嘛，分页肯定就要说到 limit 关键字嘛。</p>
+<p>然后我啪的一下扔了一个链接出来：</p>
+<blockquote>
+<p><a href="https://dev.mysql.com/doc/refman/8.0/en/limit-optimization.html">https://dev.mysql.com/doc/refman/8.0/en/limit-optimization.html</a></p>
+</blockquote>
+<p><img src="https://s2.loli.net/2024/09/08/1MEVRbcC9QpI6zS.png" alt="img"></p>
+<p>这个链接就是 MySQL 官方文档，这一章节叫做“对 Limit 查询的优化”，针对 limit 和 order by 组合的场景进行了较为详细的说明。</p>
+<p>链接里面有这样的一个示例。</p>
+<p>首先，针对一张叫做 ratings 的表给了一个不带 limit 的查询结果：</p>
+<p><img src="https://s2.loli.net/2024/09/08/o1hKUHJzMfRQgFA.png" alt="img"></p>
+<p>可以看到，一共有 7 条数据，确实按照 category 字段进行了排序。</p>
+<p>但是当我们带着 limit 的时候，官方文档上给出的查询结果是这样的：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231014210214.png" alt="img"></p>
+<p>为了让你更加直观的看出差异，我把两个结果给你放在一起：</p>
+<p><img src="https://s2.loli.net/2024/09/08/rFPswJ9pgyUctXu.png" alt="img"></p>
+<p>没排序之前，前五条对应的 ID 是 1,5,3,4,6。</p>
+<p>排序之后，前五条对应的 ID 是 1,5,4,3,6。</p>
+<p>这就是官方的案例，非常直观的体现了 order by 和 limit 一起使用时带来的 nondeterministic。</p>
+<p>这个单词，我们前一篇文章中才学过，现在又可以温习了一下了：</p>
+<p><img src="https://s2.loli.net/2024/09/08/bdNGloEf5D8qwJg.png" alt="img"></p>
+<p>你知道的，歪师傅一向是比较严谨的，所以我也想着在本地复现一下官网的这个案例。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015222426.png" alt="img"></p>
+<p><strong>我本地的 MySQL 版本是 8.0.22，以下 SQL 均是基于这个版本执行的。</strong></p>
+<p>首先，按照官网上的字段，先“咔”的一下整出表结构：</p>
+<figure class="highlight sql"><table><tr><td class="code"><pre><span class="line"><span class="keyword">CREATE</span> <span class="keyword">TABLE</span> `ratings` (</span><br><span class="line">  `id` <span class="type">int</span> <span class="keyword">NOT</span> <span class="keyword">NULL</span> AUTO_INCREMENT,</span><br><span class="line">  `category` <span class="type">int</span> <span class="keyword">DEFAULT</span> <span class="keyword">NULL</span>,</span><br><span class="line">  `rating` <span class="type">varchar</span>(<span class="number">255</span>) <span class="keyword">DEFAULT</span> <span class="keyword">NULL</span>,</span><br><span class="line">  <span class="keyword">PRIMARY</span> KEY (`id`)</span><br><span class="line">) ENGINE<span class="operator">=</span>InnoDB;</span><br></pre></td></tr></table></figure>
+
+<p>然后“唰”的一下插入 7 条数据：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">1</span>, <span class="number">1</span>, <span class="string">&#x27;4.5&#x27;</span>);</span><br><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">2</span>, <span class="number">3</span>, <span class="string">&#x27;5.0&#x27;</span>);</span><br><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">3</span>, <span class="number">2</span>, <span class="string">&#x27;3.7&#x27;</span>);</span><br><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">4</span>, <span class="number">2</span>, <span class="string">&#x27;3.5&#x27;</span>);</span><br><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">5</span>, <span class="number">1</span>, <span class="string">&#x27;3.2&#x27;</span>);</span><br><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">6</span>, <span class="number">2</span>, <span class="string">&#x27;3.5&#x27;</span>);</span><br><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">7</span>, <span class="number">3</span>, <span class="string">&#x27;2.7&#x27;</span>);</span><br></pre></td></tr></table></figure>
+
+<p>接着“啪”的一声执行一下不带 limit 的 SQL，发现运行结果和官网一致：</p>
+<blockquote>
+<p>SELECT * FROM ratings ORDER BY category;</p>
+</blockquote>
+<p><img src="https://s2.loli.net/2024/09/08/RIkytsadLm3xXJY.png" alt="img"></p>
+<p>然后“咻”的声执行一下带 limit 的 SQL：</p>
+<blockquote>
+<p>SELECT * FROM ratings ORDER BY category LIMIT 5;</p>
+</blockquote>
+<p><img src="https://s2.loli.net/2024/09/08/Ox7DuUJmEgyPKeQ.png" alt="img"></p>
+<p>等等，运行结果不一样了？</p>
+<p>你把表结构拿过去，然后分别执行对应的 SQL，大概率你也会发现：怎么和官网上的运行结果不一样呢？</p>
+<p><img src="https://s2.loli.net/2024/09/08/sLzTaSU1JwWxgPQ.png" alt="img"></p>
+<p>为什么运行结果不一样了呢？</p>
+<p>这就是我当时遇到的支线任务。</p>
+<h2 id="大力出奇迹"><a href="#大力出奇迹" class="headerlink" title="大力出奇迹"></a><strong>大力出奇迹</strong></h2><p>当我遇到这个问题的时候，其实我非常自信。</p>
+<p>我自信的知道，肯定是我错了，官方文档不可能有问题，只是它在展示这个案例的时候，隐去了一些信息而已。</p>
+<p>巧了，我也恰好知道怎么去触发 order by 和 limit 组合在一起时的“数据紊乱”的情况：当 order by 的字段重复率特别高的时候，带着 limit 查询，就会出现官网中的现象。</p>
+<p>我直接先插入了 20 条这样的数据：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231014221522.png" alt="img"></p>
+<p>（实际上我第一次运行的时候，插入了 100 条这样的数据，所以，这一小结的名字叫做：大力出奇迹。）</p>
+<p>这样在表中就有大量的 category 为 2 的数据。</p>
+<p>同样的 SQL，运行结果就变成了这样：</p>
+<p><img src="https://s2.loli.net/2024/09/08/B2KVSXrcRnLGEvA.png" alt="img"></p>
+<p>可以看到前五条数据的 ID 还是 1,5,3,4,6。</p>
+<p>但是，当我运行这个 SQL 的时候，情况就不一样了：</p>
+<p><img src="https://s2.loli.net/2024/09/08/Bjq2OmY6vzJudFC.png" alt="img"></p>
+<p>确实出现了官网中类似的情况，ID 为 27 的数据突然冲到了前面。</p>
+<p>好，现在算是一定程度上复现了官网上的案例。</p>
+<p>你知道当我复现这个案例之后，随之而来的另一个问题是什么吗？</p>
+<p>那就是如果我开始的不插入 20 条 category 为 2 的数据，只是插入 10 条呢，或者是 5 条呢？</p>
+<p>就是有没有一个临界值的存在，让两个 SQL 运行结果不一样呢？</p>
+<p>你猜怎么着？</p>
+<p>我以二分查找大法为抓手，为运行结果赋能，沉淀出了一套寻找临界值的打发，最终通过精准下钻，找到了临界值，就是 ID 为 16 的这条数据。</p>
+<p><img src="https://s2.loli.net/2024/09/08/Kxig7G6zDI9pLjc.png" alt="img"></p>
+<p>你先把这一批数据插入到表中：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">8</span>, <span class="number">2</span>, <span class="string">&#x27;3.2&#x27;</span>);</span><br><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">9</span>, <span class="number">2</span>, <span class="string">&#x27;3.2&#x27;</span>);</span><br><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">10</span>, <span class="number">2</span>, <span class="string">&#x27;3.2&#x27;</span>);</span><br><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">11</span>, <span class="number">2</span>, <span class="string">&#x27;3.2&#x27;</span>);</span><br><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">12</span>, <span class="number">2</span>, <span class="string">&#x27;3.2&#x27;</span>);</span><br><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">13</span>, <span class="number">2</span>, <span class="string">&#x27;3.2&#x27;</span>);</span><br><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">14</span>, <span class="number">2</span>, <span class="string">&#x27;3.2&#x27;</span>);</span><br><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">15</span>, <span class="number">2</span>, <span class="string">&#x27;3.2&#x27;</span>);</span><br></pre></td></tr></table></figure>
+
+<p>然后分别执行这两个 SQL，运行结果是符合预期的：</p>
+<p><img src="https://s2.loli.net/2024/09/08/FGBz5QqhkK4n6Mj.png" alt="img"></p>
+<p>但是，一旦再插入这样的一条数据：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">16</span>, <span class="number">2</span>, <span class="string">&#x27;3.2&#x27;</span>);</span><br></pre></td></tr></table></figure>
+
+<p>情况就不一样了：</p>
+<p><img src="https://s2.loli.net/2024/09/08/RBvuyT3XtL8CzOf.png" alt="img"></p>
+<p>limit 语句查询出来的 id 就是 1,5,16,3,4 了。</p>
+<p>16 就冒出来了。</p>
+<p>很好，越来越有意思了。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015223402.png" alt="img"></p>
+<p>为什么当表里面有 15 条数据的运行结果和 16 条数据时不一样呢？</p>
+<p>我也不知道，所以我试图从执行计划中寻找答案。</p>
+<p>但是，这两种情况对应的执行计划一模一样：</p>
+<p><img src="https://s2.loli.net/2024/09/08/Wsd9F2yiU73MCcG.png" alt="img"></p>
+<p>为什么会这样呢？</p>
+<p>因为官网上还有这样一句话：</p>
+<p><img src="https://s2.loli.net/2024/09/08/RIDJth64KdfGSV1.png" alt="img"></p>
+<p>使用 EXPLAIN 不会区分优化器是否在内存中执行文件排序。</p>
+<p>但是在优化器的 optimizer trace 的输出中的 filesort_priority_queue_optimization 字段，可以看到内存中文件排序的相关情况。</p>
+<p>所以，这个时候得掏出另外一个武器了：optimizer_trace。</p>
+<p>使用 optimizer_trace 可以跟踪 SQL 语句的解析优化执行的全过程。</p>
+<p>这两张情况的执行结果不一样，那么它们的 optimizer_trace 结果也必然是不一样的。</p>
+<p>于是我分别在 15 条数据和 16 条数据的情况下执行了这样的语句：</p>
+<figure class="highlight vbnet"><table><tr><td class="code"><pre><span class="line"><span class="keyword">SET</span> optimizer_trace=<span class="comment">&#x27;enabled=on&#x27;;</span></span><br><span class="line"><span class="keyword">SELECT</span> * <span class="keyword">from</span> ratings <span class="keyword">order</span> <span class="keyword">by</span> category limit <span class="number">5</span>;</span><br><span class="line"><span class="keyword">SELECT</span> * <span class="keyword">FROM</span> `information_schema`.`OPTIMIZER_TRACE`;</span><br><span class="line"><span class="keyword">SET</span> optimizer_trace=<span class="comment">&#x27;enabled=off&#x27;;</span></span><br></pre></td></tr></table></figure>
+
+<p><img src="https://s2.loli.net/2024/09/08/n3ZHNstBCfSwcK9.png" alt="img"></p>
+<p>然后取出 optimizer_trace 结果中的 TRACE 数据，左边是 15 条数据的情况，右边是 16 条数据的情况：</p>
+<p><img src="https://s2.loli.net/2024/09/08/azShoWuCXT4l6P7.png" alt="img"></p>
+<p>主要关注我框起来的部分，也就是前面提到的 filesort_priority_queue_optimization 字段。</p>
+<p>这个字段主要是表明这个 SQL 是否使用优先级队列的方式进行排序。</p>
+<p>在只有 15 条数据的情况下，它的 chosen 是 false，即不使用优先级队列。</p>
+<figure class="highlight json"><table><tr><td class="code"><pre><span class="line"><span class="attr">&quot;filesort_priority_queue_optimization&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;limit&quot;</span><span class="punctuation">:</span> <span class="number">5</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;chosen&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;cause&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sort_is_cheaper&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br></pre></td></tr></table></figure>
+
+<p>同时它也给了不使用的原因：sort_is_cheaper。</p>
+<p>它认为直接进行排序的成本更低。</p>
+<p>而我们也知道，大部分正常情况下 MySQL 就两种排序方式。如果 sort_buffer_size 够用，那么就在内存中使用快速排序完成排序。</p>
+<p>如果 sort_buffer_size 不够用，那就借助临时文件进行归并排序。</p>
+<p>但是你要注意，我前面说的是“大部分正常情况下”。</p>
+<p>当我们程序中这种案例，order by + limit 的情况，MySQL 就掏出了优先级队列。</p>
+<p>这个逻辑其实很简单嘛，limit 语句，不就是找 TOP N 吗？</p>
+<p>那你说说，提到 TOP N 你是不是就能立马联想到优先级队列，想到堆排序？</p>
+<p>翻出八股文一看：哦，原来堆排序不是稳定的排序算法。</p>
+<p>那么不稳定会带来什么问题呢？</p>
+<p>我们先按下不表，插个眼在这里，等会儿回收。</p>
+<p><img src="https://s2.loli.net/2024/09/08/VkWuit2g6rLapqO.png" alt="img"></p>
+<p>继续回到 15 条数据和 16 条数据的情况，当时我找到这个临界值之后，我就在想：为什么临界值在这个地方呢？</p>
+<p>一定是有原因的，我想知道答案。</p>
+<p>答案在哪里？</p>
+<p>我先在网上搜了一圈，发现可能是我冲浪的姿势不对，一直没找到能说服我的答案。</p>
+<p>直到我有一天我干饭的时候，脑海里面突然蹦出了一句话：朋友，源码之下无秘密。</p>
+<p>于是我桌子一掀，就起来了。</p>
+<p><img src="https://s2.loli.net/2024/09/08/put6zlwGvWJ4TUH.png" alt="img"></p>
+<h2 id="找源码"><a href="#找源码" class="headerlink" title="找源码"></a><strong>找源码</strong></h2><p>找源码这步，歪师傅就遭老罪了。</p>
+<p>因为 MySQL 这玩意主要是用 C++ 写的：</p>
+<p><img src="https://s2.loli.net/2024/09/08/VDl71BROYrvwTsy.png" alt="img"></p>
+<p>虽然我经常也在说语言是相通的，但是我也确实很久没写 C++ 了。</p>
+<p>一路坎坎坷坷终于找到了这个地方：</p>
+<blockquote>
+<p><a href="https://github.com/mysql/mysql-server/blob/trunk/sql/filesort.cc">https://github.com/mysql/mysql-server/blob/trunk/sql/filesort.cc</a></p>
+</blockquote>
+<p>这个里面有前面出现过的 sort_is_cheaper：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015000102.png" alt="img"></p>
+<p>找到这里，就算是找到突破口了，就开始无限的接近真相了。</p>
+<p>在 filesort.cc 这个文件里面，有一个方法叫做 check_if_pq_applicable：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015133440.png" alt="img"></p>
+<p>先关注一下这个方法上的描述：</p>
+<blockquote>
+<p>Test whether priority queue is worth using to get top elements of an ordered result set.</p>
+</blockquote>
+<p>翻译过来大概是说，看看是否值得使用优先级队列去获取有序结果级中的 Top 元素。</p>
+<p>也就是这个方法主要就是评判“是否值得”这件事的。</p>
+<p>如果值得呢？</p>
+<blockquote>
+<p>If it is, then allocates buffer for required amount of records</p>
+</blockquote>
+<p>如果值得，就为所需数量的记录分配对应的缓存区。</p>
+<p>同时在描述部分还给出了一个对应的 SQL：</p>
+<blockquote>
+<p>SELECT … FROM t ORDER BY a1,…,an LIMIT max_rows;</p>
+</blockquote>
+<p>这 SQL 样例不就是对应我们前面研究的 SQL 吗。</p>
+<p>所以这里面一定能解决我的问题：</p>
+<blockquote>
+<p>为什么临界值在 16 条数据这个地方呢？</p>
+</blockquote>
+<p>瞟一眼源码，可以发现它大概是分为了 6 大坨判断：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015134233.png" alt="img"></p>
+<p>首先第一坨：</p>
+<p><img src="https://s2.loli.net/2024/09/08/I374hE1zxXZYUqL.png" alt="img"></p>
+<p>很明显，判断了 SQL 中是否有 limit 关键词。</p>
+<p>如果 limit 都没有，那肯定不能用优先级队列了。</p>
+<p>这一点，我们也可以通过 optimizer_trace 中的结果来验证：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015134942.png" alt="img"></p>
+<p>这个 SQL 对应的结果是这样的：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015135057.png" alt="img"></p>
+<p>这不就和源码中的 “not applicable (no LIMIT)” 呼应上了吗？</p>
+<p>然后看第二坨 if 判断：</p>
+<p><img src="https://s2.loli.net/2024/09/08/STPnXhq4QgwxvLZ.png" alt="img"></p>
+<p>如果 SQL 里面有去重的操作，则不支持。</p>
+<p>第三坨和第四坨：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015140640.png" alt="img"></p>
+<p>分别是说，limit 的值需要小于 UINT_MAX - 2，以及记录的最大长度需要小于 0xFFFFFFFF，不能太长。</p>
+<p>UINT_MAX - 2 指的是 priority queue 的最大容量。</p>
+<p>然后我们先看最后一坨 if 判断：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015141146.png" alt="img"></p>
+<p>也很好理解，要看看针对 limit 这部分的数据，内存够不够，放不放的下。放得下才能使用优先级队列。</p>
+<p>主要看这坨：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015141913.png" alt="img"></p>
+<p>看这个判断条件：</p>
+<blockquote>
+<p>if (param-&gt;max_rows &lt; num_rows / PQ_slowness)</p>
+</blockquote>
+<p>如果满足，就使用优先级队列。</p>
+<p>如果不满足，就 “sort_is_cheaper”。</p>
+<p>其中 max_rows 就是 limit 的条数，num_rows 就是数据库里面符合条件的总条数。</p>
+<p>PQ_slowness 是什么玩意？</p>
+<p><img src="https://s2.loli.net/2024/09/08/oXNlfqxJE5K8T3z.png" alt="img"></p>
+<p>PQ_slowness 是一个常量，值为 3。</p>
+<p>从这个值的描述上看，MySQL 官方认为快速排序的速度是堆排序的 3 倍，这个值也不是拍脑袋拍出来，是通过测试跑出来。</p>
+<p>知道了每个字段的含义，那么这个表达式什么时候为 true 就很清晰了。</p>
+<blockquote>
+<p>if (param-&gt;max_rows &lt; num_rows / PQ_slowness)</p>
+</blockquote>
+<p>已知，PQ_slowness=3，max_rows=5。</p>
+<p>那么当 num_rows &lt;=15 时，表达式为 false。num_rows&gt;16 时，表达式为 true。</p>
+<p>为 true ，则使用优先级队列进行排序。</p>
+<p>临界值就是这样来的。</p>
+<p>所以，那句话是怎么说的来着？</p>
+<p>源码之下，无秘密。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015223745.png" alt="img"></p>
+<h2 id="再回首"><a href="#再回首" class="headerlink" title="再回首"></a><strong>再回首</strong></h2><p>前面盘完了 optimizer_trace 中的 filesort_priority_queue_optimization 字段。</p>
+<p>接着再回首，看看结果文件中的这个 sort_mode 玩意。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015144927.png" alt="img"></p>
+<p>关于 sort_mode 官网上也有专门的介绍：</p>
+<blockquote>
+<p><a href="https://dev.mysql.com/doc/refman/8.0/en/order-by-optimization.html">https://dev.mysql.com/doc/refman/8.0/en/order-by-optimization.html</a></p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015152017.png" alt="img"></p>
+<p>sort_mode 一共有三种模式。</p>
+<p>第一种，&lt;sort_key, rowid&gt; 模式。</p>
+<blockquote>
+<p>This indicates that sort buffer tuples are pairs that contain the sort key value and row ID of the original table row. Tuples are sorted by sort key value and the row ID is used to read the row from the table.</p>
+</blockquote>
+<p>这种模式的工作逻辑就是把需要排序的字段按照 order by 在 sort buff 里面排好序。</p>
+<p>sort buff 里面放的是排序字段和这个字段对应的 ID。排序字段和 ID 是以键值对的形式存在的。</p>
+<p>如果 sort buff 不够放，那就让临时文件帮帮忙。</p>
+<p>反正最后把所有数据都过一遍，完成排序任务。接着再拿着 ID 进行回表操作，取出完整的数据，写进结果文件。</p>
+<p>第二种，&lt;sort_key, additional_fields&gt; 模式：</p>
+<blockquote>
+<p>This indicates that sort buffer tuples contain the sort key value and columns referenced by the query. Tuples are sorted by sort key value and column values are read directly from the tuple.</p>
+</blockquote>
+<p>这种模式和回表不一样，就是直接一梭子把整个用户需要查询的字段放在存入 sort buffer 中。</p>
+<p>当然，还是会先按照排序的字段 order by ，在 sort buff 里面排好序。</p>
+<p>这样全部数据读取完毕之后，就不需要回表了，可以直接往结果文件里面写。</p>
+<p>其实我理解，第一种和第二种就是是否回表的区别。第二种模式应该是第一种模式的迭代优化。</p>
+<p>因为不管怎么样，用第一种模式都能完成排序并获取数据任务。</p>
+<p>至于怎么决策使用哪种方案，MySQL 内部肯定也是有一套自己的逻辑。</p>
+<p>第三种模式是 &lt;sort_key, packed_additional_fields&gt;:</p>
+<blockquote>
+<p>Like the previous variant, but the additional columns are packed tightly together instead of using a fixed-length encoding.</p>
+</blockquote>
+<p>这种模式是第二种模式的优化。描述中说用 packed tightly together 代替了 fixed-length encoding。</p>
+<p>啥意思呢？</p>
+<p>比如我们的表结构中 rating 字段的类型是 varchar(255):</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015161243.png" alt="img"></p>
+<p>如果我只是在里面存储一个 why，那么它的实际长度应该是 “why” 这 3 个字符的内存空间，加 2 个字节的字段长度，而不是真正的 255 这么长。</p>
+<p>这就是 “packed tightly together”，字段紧密的排列在一起，不浪费空间。</p>
+<p>sort buffer 就这么点大，肯定不能太浪费了。</p>
+<p>我之前确实不知道这个东西，所以趁这次查漏补缺了一下，属于又拿捏了一个小细节。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015223916.png" alt="img"></p>
+<h2 id="堆排序"><a href="#堆排序" class="headerlink" title="堆排序"></a><strong>堆排序</strong></h2><p>既然都提到堆排序了，那我们就按照堆排序的逻辑盘一盘数据库里面的数据。</p>
+<p>目前数据库里面全部的数据是这样的：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015211224.png" alt="img"></p>
+<p>因为是 limit 5，所以先把前五条拿出来：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015211448.png" alt="img"></p>
+<p>我们先按照 category 构建小顶堆，只是用不同的颜色来表示不同的 ID。</p>
+<p>那么前五条数据构建出来的小顶堆是这样的：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015211631.png" alt="img"></p>
+<p>接着，下一条数据是 id 为 6，category 为 2 的数据：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015211802.png" alt="img"></p>
+<p>把这条数据放到小顶堆之后变成了这样：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015212201.png" alt="img"></p>
+<p>再下一条数据为 id 为 7，category 为 3 的数据。</p>
+<p>由于 3 大于 2，所以不满足放入小顶堆的条件。</p>
+<p>再下一条数据为 id 为 8，category 为 2 的数据，所以会把小顶堆变成这样：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015213404.png" alt="img">再来 id 为 9，category 为 2 的数据，小顶堆会变成这样：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015213456.png" alt="img"></p>
+<p>以此类推，最后一条处理完成之后，小顶堆里面的数据是这样的：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015213150.png" alt="img"></p>
+<p>然后，我们将上述小顶堆，进行出堆操作。</p>
+<p>翻开八股文一看，哦，原来出堆无外乎就三个动作：</p>
+<ol>
+<li>堆顶元素出堆</li>
+<li>最后一个元素放入堆顶</li>
+<li>调整堆</li>
+</ol>
+<p>所以第一个出堆的节点是这样：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015215035.png" alt="img"></p>
+<p>第二个出堆的节点是这样的：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015215152.png" alt="img"></p>
+<p>第三个出堆的节点是这样的：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015215230.png" alt="img"></p>
+<p>那么最终的出堆顺序就是这样的：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015215319.png" alt="img"></p>
+<p>接下来，别忘了，我们的颜色是有含义的，代表的是 ID，我们在看看最开始的五条数据：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015215406.png" alt="img"></p>
+<p>所以，我们按照颜色把出堆顺序补上 ID：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015215544.png" alt="img"></p>
+<p>1,5,16,3,4。</p>
+<p>朋友们，这串数字是否有点眼熟？</p>
+<p>是否在午夜梦回的时候梦到过一段？</p>
+<p>再给你看一个神奇的东西：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015215710.png" alt="img"></p>
+<p>你看看这个 limit 5 取出来的 id 是什么？</p>
+<p>1,5,16,3,4。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015224033.png" alt="img"></p>
+<p>这玩意就这样呼应上了，掌声可以响起来了，今晚高低得用这串数字搞个彩票。</p>
+<p>然后，再提醒一下，我们都知道堆排序是一个不稳定的排序算法。</p>
+<p>它的不稳定体现在哪里？</p>
+<p>翻开八股文一看，哦，原来是“位置变了”。</p>
+<p>就拿我们的这个例子来说，排序之前，3 和 4 这两条数据在 16 之前：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015221934.png" alt="img"></p>
+<p>排完序之后，16 这条数据跑到 3 前面去了。</p>
+<p>虽然他们对应的 category 值都是 2，但是相对位置发生了变化，这就是不稳定的表现。</p>
+<p>好了，现在我再问你一个问题，当我再插入一条数据</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line">INSERT INTO <span class="string">`ratings`</span>(<span class="string">`id`</span>, <span class="string">`category`</span>, <span class="string">`rating`</span>) VALUES (<span class="number">17</span>, <span class="number">2</span>, <span class="string">&#x27;3.2&#x27;</span>);</span><br></pre></td></tr></table></figure>
+
+<p>你说取前五条，运行结果是什么？</p>
+<p>肯定是 1,5,17,3,4。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015220002.png" alt="img"></p>
+<p>哪怕我插入个 10000，运行结果我也猜得出来，肯定是 1,5,10000,3,4。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015220111.png" alt="img"></p>
+<p>但是你说，我要是再插入个 10w 条 category=2 的数据呢？</p>
+<p>这玩意我就没实验了，但是我猜，可能不会启用优先级队列，也就是不会走这一套逻辑。</p>
+<p>为什么，你问为什么？</p>
+<p>要不你再想想使用优先级队列的那几坨 if 判断？</p>
+<h2 id="最后说一句"><a href="#最后说一句" class="headerlink" title="最后说一句"></a><strong>最后说一句</strong></h2><p>好了，写到这里文章也就进入尾声了，到了我拿手的上价值环节了。</p>
+<p>你现在回过头想想，其实这篇文章真的没有教会你什么特别有价值的东西。如果让我来总结这篇文章，我只会取走文章开头的这个链接：</p>
+<blockquote>
+<p><a href="https://dev.mysql.com/doc/refman/8.0/en/limit-optimization.html">https://dev.mysql.com/doc/refman/8.0/en/limit-optimization.html</a></p>
+</blockquote>
+<p>这是官方文档，当你打开这个链接之后，我不相信你不会被侧边栏中的 Optimization 这个单词给吸引住，然后仔细一看，这一章节下有这么多的 xxx Optimization，我不信你没有点开看一眼的欲望：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015220616.png" alt="img"></p>
+<p>如果你没有这一眼欲望，你抵抗的一定不是技术，因为如果你抵抗技术，你根本就不会打开这个链接。</p>
+<p>如果你没有这一眼欲望，说明你抵抗的是纯英文。但是我的朋友，要克服好吗。一点点啃，这才是一手资料的地方，而我不过是一个拙劣的倒卖一手资料的二手贩子而已。</p>
+<p>你在看的过程中，除了英文的问题外，肯定有很多其他的问题。这个时候你带着问题去搜索答案，收获将会是巨大的。</p>
+<p>这就是我们常常说的：从官方文档开始学。</p>
+<p>我这篇文章的起点，就是官方文档，然后从文档发散，我看了很多其他的文章。</p>
+<p>如果有一天你看官方文档的时候，看到 limit ptimization 这一章节的时候，有看不懂的地方，然后带着问题在网上搜到了我这篇文章。</p>
+<p>朋友，这就很爽了。</p>
+<p>这是你的收获，是我的荣幸。</p>
+<p>好了，上完价值，打完收工。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20231015221426.png" alt="img"></p>
+]]></content>
+      <categories>
+        <category>mysql</category>
+      </categories>
+      <tags>
+        <tag>mysql</tag>
+      </tags>
+  </entry>
 </search>
