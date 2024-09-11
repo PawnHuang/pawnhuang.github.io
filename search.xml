@@ -3032,7 +3032,7 @@ e2.hash &amp; newCap-1
   </entry>
   <entry>
     <title>Spring IoC 核心流程介绍</title>
-    <url>/2024/09/08/mysql/%E6%88%91%E8%AF%95%E5%9B%BE%E6%89%AF%E6%8E%89%E8%BF%99%E6%9D%A1%20SQL%20%E7%9A%84%E5%BA%95%E8%A3%A4/</url>
+    <url>/2024/09/10/mysql/%E6%88%91%E8%AF%95%E5%9B%BE%E6%89%AF%E6%8E%89%E8%BF%99%E6%9D%A1%20SQL%20%E7%9A%84%E5%BA%95%E8%A3%A4/</url>
     <content><![CDATA[<p><img src="https://s2.loli.net/2024/09/08/Qdfk2t5bcg4Mlse.png" alt="img"></p>
 <p>这次带大家盘一个我觉得有点意思的东西，也是之前写《来啊，分页啊》这篇文章时，遇到的一个神奇的现象，但是当时忙着做文章搞定这个主线任务，就没有去深究这个支线任务。</p>
 <p>现在我们一起把这个支线任务盘一下。</p>
@@ -3363,6 +3363,259 @@ e2.hash &amp; newCap-1
       </categories>
       <tags>
         <tag>mysql</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>我滴天！spring支持异步初始化了？</title>
+    <url>/2024/09/11/spring/spring%E5%BC%82%E6%AD%A5%E5%88%9D%E5%A7%8B%E5%8C%96bean%E5%AE%B9%E5%99%A8/</url>
+    <content><![CDATA[<p>同事吐槽：卧槽我的项目启动要10多分钟，要怎么加快项目启动速度呀？</p>
+<p>脑袋叮的一下，如果我bean加载速度加快，那么不是加快了么？</p>
+<p>在一想？这不是我以前看过的一个面试题么？interesting</p>
+<blockquote>
+<p>spring 在启动期间会做类扫描，以单例模式放入 ioc。但是 spring 只是一个个类进行处理，如果为了加速，我们取消 spring 自带的类扫描功能，用写代码的多线程方式并行进行处理，这种方案可行吗？为什么？</p>
+</blockquote>
+<p>老实说，我第一次看到这个面试题的时候，人是懵的。</p>
+<p><img src="https://s2.loli.net/2024/09/11/WLVExO3wnejhXt8.png" alt="img"></p>
+<p>我知道 Spring 在启动期间会把 bean 放到 ioc 容器中，但是到底是单线程还是多线程放，我还真不清楚。</p>
+<p>所以我做的第一件事情是去验证题目中这句话：但是 spring 只是一个个类进行处理。</p>
+<p>怎么去验证呢？</p>
+<p>肯定是找源码啊，源码之下无秘密啊。</p>
+<p>怎么去找呢？</p>
+<p>这个就需要你个人的经验积累了，抽丝剥茧的去翻 Spring 源码，这个就不是本文重点了，所以我就不细说了。</p>
+<p>但是我可以教你一个我一般用的比较多的奇技淫巧。</p>
+<p>首先你肯定要搞个 Bean 在项目里面，比如我这里的 Person：</p>
+<p><img src="https://s2.loli.net/2024/09/11/hylxa6MFuYC1Hir.png" alt="img"></p>
+<p>然后把项目日志级别调整为 debug：</p>
+<blockquote>
+<p>logging.level.root=debug</p>
+</blockquote>
+<p>接着启动项目，在项目里面找 Person 的关键字。</p>
+<p>原理就是这是一个 Bean，Spring 在操作它的时候一定会打印相关日志，从日志反向去查找代码，要快的多。</p>
+<p>所以通过 Debug 日志，我们能定位到这样一行关键日志：</p>
+<blockquote>
+<p>Identified candidate component class: xxxx.Person.class]</p>
+</blockquote>
+<p><img src="https://s2.loli.net/2024/09/11/cjt7DhMJNsYqgIz.png" alt="img"></p>
+<p>然后全局搜索关键字，就能找到这个地方：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20221030175405.png" alt="img"></p>
+<p>这个地方，就是打第一个断点的地方。</p>
+<p>然后启动项目，从调用堆栈往前找，能找到这个地方：</p>
+<p><img src="https://s2.loli.net/2024/09/11/ojOW6wig8VL3A4Z.png" alt="img"></p>
+<p>这个类就是我要找的类：</p>
+<blockquote>
+<p>org.springframework.context.annotation.ClassPathBeanDefinitionScanner#doScan</p>
+</blockquote>
+<p><img src="https://s2.loli.net/2024/09/11/MZuA5Ir2Wa8SXJo.png" alt="img"></p>
+<p>从源码上看，里面确实没有并发相关的操作，看起来确实是在 for 循环里面单线程一个个处理的 Bean 的。</p>
+<p>那么从理论上讲，如果是两个没有任何关联关系的 Bean，比如我下面 Person 和 Student 这两个 Bean，它们在交给 Spring 托管，往 ioc 容器里面放的时候，完全可以用两个不同的线程处理嘛：</p>
+<p><img src="https://s2.loli.net/2024/09/11/SAW1LklTYdRxnQ8.png" alt="img"></p>
+<p>所以问题就来了：</p>
+<blockquote>
+<p>如果为了加速，我们取消 spring 自带的类扫描功能，用写代码的多线程方式并行进行处理，这样可以吗？</p>
+</blockquote>
+<p>可以吗？</p>
+<p>我也不知道啊。</p>
+<p>但是我知道去哪里找答案。</p>
+<p>但是在找答案之前，我先大胆的猜一个答案：不可以。</p>
+<p>为什么？</p>
+<p>因为我看的是 Spring 5.x 版本的源码，在这个版本里面还是单线程处理 Bean。</p>
+<p>对于 Spring 这种使用规模如此之大的开源框架来说，如果能支持多线程加载的话，肯定老早就支持了。</p>
+<p>所以我先盲猜一个：不可以。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20221030205827.png" alt="img"></p>
+<h2 id="找答案"><a href="#找答案" class="headerlink" title="找答案"></a><strong>找答案</strong></h2><p>这个问题的答案肯定就藏在 Spring 的 issues 里面。</p>
+<p>不要问我为什么知道。这是来自老程序员的直觉。</p>
+<p>所以我直接就是来到了这里：</p>
+<p><img src="https://s2.loli.net/2024/09/11/LM7cTCUhI24lRdp.png" alt="img"></p>
+<p>1.2k 个 issue，怎么找到我想要找的呢？</p>
+<p>肯定是用关键词搜索一波。基于现在掌握的信息，你说关键词是什么？</p>
+<p>肯定是我们前面找到的这个方法、这个类啊，这也是你唯一掌握到的信息：</p>
+<blockquote>
+<p>org.springframework.context.annotation.ClassPathBeanDefinitionScanner#doScan</p>
+</blockquote>
+<p>话不多说，先拿着类名搜一搜，看看啥情况。</p>
+<p>从搜索结果上看，真的是一搜就中：</p>
+<p><img src="https://s2.loli.net/2024/09/11/MiFmzP5RnvK4VD8.png" alt="img"></p>
+<p>我带你看看这个 issue 的具体内容：</p>
+<blockquote>
+<p><a href="https://github.com/spring-projects/spring-framework/issues/28221">https://github.com/spring-projects/spring-framework/issues/28221</a></p>
+</blockquote>
+<p><img src="https://s2.loli.net/2024/09/11/wsR9ozpiULt8HIY.png" alt="img"></p>
+<p>有个叫做 kyangcmXF 的同学…</p>
+<p>呃，我第一眼看到他的名字的时候，看到有 F，K 还有 C，第一瞬间想起的是“疯狂星期四”。</p>
+<p>那我就叫他“星期四”同学吧。</p>
+<p>“星期四”同学说：我的项目有数以万计的 Bean 要被 Spring 初始化。所以每次项目启动的时候需要好几分钟才能完成工作。</p>
+<p>然后他发现 doScan 的代码是单线程，一个一个的去处理 Bean 的。</p>
+<p>所以他提出了一个问题：我是不是可以用 ConcurrentHashMap 来代替 Set 数据结果，然后并发加载。</p>
+<p>他的问题和我们文章开头提出的面试题可以说是一模一样。而他甚至还给出了实现的代码：</p>
+<p><img src="https://s2.loli.net/2024/09/11/MrtQHCKVSled6cn.png" alt="img"></p>
+<p>然后这个 issue 下只有一个回复，是这样的：</p>
+<p><img src="https://s2.loli.net/2024/09/11/z9eWDgG6hrUQjki.png" alt="img"></p>
+<p>首先，我们先看看这条回复的人是谁：</p>
+<p><img src="https://s2.loli.net/2024/09/11/DqLwtxzuVkNIoYe.png" alt="img"></p>
+<p>他就是 Spring 的 Contributors，他的回答可以说就是官方回答了。</p>
+<p>他给“星期四”同学说：thanks 老铁，but not possible。</p>
+<blockquote>
+<p>but post-processing bean definitions asynchronously is not possible at the moment.<br>目前不可能异步的对 bean 进行后置处理。</p>
+</blockquote>
+<p>到这里，我们至少知道了，想用异步加载的方式确实是在实现上有困难，不仅仅是简单的单线程改多线程。</p>
+<p>然后，这个老哥给“星期四”同学指了条路，说如果你想要进一步了解的话，可以看看编号为 13410 的 issue。</p>
+<p>虽然我们现在已经有一个答案了，但是既然大佬指路了，那我肯定高低得带你去瞅上一眼。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20221030210146.png" alt="img"></p>
+<h2 id="还得从11年前说起"><a href="#还得从11年前说起" class="headerlink" title="还得从11年前说起"></a><strong>还得从11年前说起</strong></h2><p>根据大佬指路的方向，我点开这个 issue 的时候都震惊了：</p>
+<blockquote>
+<p><a href="https://github.com/spring-projects/spring-framework/issues/13410">https://github.com/spring-projects/spring-framework/issues/13410</a></p>
+</blockquote>
+<p><img src="https://s2.loli.net/2024/09/11/3p7Q5uImejLSchw.png" alt="img"></p>
+<p>题目翻译过来是“在启动期间并行的处理 Bean 的初始化”，紧扣我们的面试题。</p>
+<p>让我震惊的主要是这个 issue 的创建时间：2011 年 10 月 12 号。</p>
+<p>好家伙，原来 11 年前大家就提出了这个问题并进行了讨论。</p>
+<p>但是根据我多年在 github 上冲浪的经验，遇到这种“年久失修”的 issue 不能从头到尾的看，得反着来，得先看最后一个回复是什么时候。</p>
+<p>所以我直接就是一个拉到最后，没想到最后一个回复还挺新鲜，今年二月：</p>
+<p><img src="https://s2.loli.net/2024/09/11/JehmDfWgQ7dvRiq.png" alt="image-20240911224540507"></p>
+<p>这个回答可以说非常关键了，是整个 Bean 的异步初始化的实现思路，我带你盘一下关键点，强烈建议你自己去看看，并且根据这部分的描述找到对应的代码。</p>
+<p>在这个回答里面提到说会引入 backgroundInit 标识，以及在 @Bean 里面加入 bootstrap=BACKGROUND 枚举，通过这样的方式来支持 Bean 的异步初始化。</p>
+<p>会在 preInstantiateSingletons 方法中，覆盖每个加了 BACKGROUND 的 Bean 的整个 getBean 步骤。</p>
+<p>因为是异步处理，相应的 Future 会存储起来，这样依赖的 Bean 就会自动等待 Bean 实例完成。</p>
+<p>此外，所有常规的后台初始化都会在 preInstantiateSingletons 结束时强制完成。只有被额外标记为 @Lazy 的 Bean 才允许稍后完成（直到第一次实际访问）。</p>
+<p>最后这个回答中还强调了一点：因为是异步化操作，所以项目中还需要搞一个叫做 bootstrapExecutor 的线程池，来支持这个事情。</p>
+<p>没有，那就异步化不了。</p>
+<p>好好好，要知道之前官方22年的回答还是这样</p>
+<p><img src="https://s2.loli.net/2024/09/11/6dZrHbugVaLPsIQ.png" alt="img"></p>
+<p>这个哥们说了很长一段，我简单的翻译一下：</p>
+<p>他说这个问题在最新的 6.0 版本中也不会被解决，因为它目前的优先级并不是特别高。</p>
+<p>在处理真正的启动案例时，我们经常发现，时间都花在少数几个相互依赖的特定 bean 上。在那里引入并行化，在很多情况下并不能节省多少，因为这并不能加快关键路径。这通常与 ORM 设置和数据库迁移有关。</p>
+<p>你也可以使用“应用程序启动跟踪功能”（application startup tracking）为自己的应用程序收集更多这方面的信息：可以看到启动时间花在哪里以及是如何花的，以及并行化是否会改善这种情况。</p>
+<p>对于 Spring Framework 6.0，我们正专注于本地用例的 Ahead Of Time 功能，以及启动时间的改进。</p>
+<p>到这里，就再次证明了官方对于并行化处理 bean 的态度：</p>
+<p><img src="https://s2.loli.net/2024/09/11/Z2MvWdUultP9aIg.png" alt="img"></p>
+<p>但是这个哥们的回答中倒没有说“这个功能做不了”，他说的是“经过调研，这个功能实现后的收益并不大”。</p>
+<p>而且他还透露了一个关键的信息，针对 Spring 启动速度，在 6.0 里面的方向是 AOT。</p>
+<p>其这也不算透露，早在 2020 年，甚至更早，我记得 Spring 就说过以后的努力方向是 AOT，提前编译（Ahead-of-Time Compilation）。</p>
+<p>如果你对于 AOT 很陌生的话，可以去了解一下，不是本文重点，提一下就行。</p>
+<p>接下来，关于这个 11 年前的帖子，里面的内容还是比较多，我只能带你简单浏览一下帖子，如果你想要了解细节的话，还得自己去看看。</p>
+<p>首先，提出这个问题的人其实已经提出了自己的解决之道：</p>
+<p><img src="https://s2.loli.net/2024/09/11/uIwPZjE5zvtBWe1.png" alt="img"></p>
+<p>核心想法还是在 Bean 初始化的时候引入线程池，然后并发初始化 Bean。只是需要特别考虑的是存在循环依赖的 Bean。</p>
+<p>然后官方立马就站出来对线了：</p>
+<p><img src="https://s2.loli.net/2024/09/11/P3H9TvLgXytbwzp.png" alt="img"></p>
+<p>小老弟，虽然从代码上看，在 Spring 容器中引入并发的 Bean 初始化看起来是直截了当的方法，但在实现起来并非看起来这么简单。重要的是我们需要看到更多的反馈和需求，当大家都在说“Spring 容器的初始化从根本上说太慢了”，我们才会认真考虑这种改变。</p>
+<p>所以说小老弟，没有什么是一成不变的，几年前做不了的东西几年后他就给你整的明明白白。</p>
+<h2 id="尝鲜"><a href="#尝鲜" class="headerlink" title="尝鲜"></a><strong>尝鲜</strong></h2><p>气氛都烘托到这里了，那高低得给你整一个 Demo 跑跑才行啊。</p>
+<p>目前 Spring 6.2.0 版本还没正式发布，最新的 SpringBoot 里面也还没有集成 Spring 6.2.0 版本。</p>
+<p>所以我们不能通过新建一个 SpringBoot 项目来尝鲜，得搞一个纯粹的 Spring 项目。</p>
+<p>没想到遇到了一个卡点：怎么去创建一个 Spring 项目来着？</p>
+<p> <img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20240519204532.png" alt="img"></p>
+<p>这几年要创建一个新的项目，都是直接使用 SpringBoot 的脚手架来搞了，这突然一下让我搞一个纯粹的 Spring 项目出来，还真的有点懵逼。</p>
+<p>于是我还去网上搜索了一番。搜索的问题是：如何创建一个 Spring 项目。</p>
+<p>这几年属于是被 SpringBoot 喂的太好了。</p>
+<p>经过一番搜索，终于是搞定了。</p>
+<p>首先，我们要指定 Spring 的版本为 6.2.0-SNAPSHOT：</p>
+<p><img src="https://s2.loli.net/2024/09/11/DoKWNJF73yc5bZG.png" alt="img"></p>
+<p>然后搞两个 Bean，在构造方法里面 Sleep 5s，模拟初始化比较耗时的情况：</p>
+<p><img src="https://s2.loli.net/2024/09/12/lOoQ8dRCMj5iDVy.png" alt="image-20240912003448166"></p>
+<p><img src="https://s2.loli.net/2024/09/12/R47ZgvYn3f2JHWS.png" alt="image-20240912003456878"></p>
+<p>接着找个地方 @Bean，给 Spring 托管一下：</p>
+<p><img src="https://s2.loli.net/2024/09/12/fAkFbWMvqTYVPr6.png" alt="image-20240912003157565"></p>
+<p>最后搞个 Main 方法，启动 Spring 容器，同时 用 StopWatch 来统计一下时间：</p>
+<p><img src="https://s2.loli.net/2024/09/11/UJSfa3EPihqNmzL.png" alt="img"></p>
+<p>启动之后，观察控制台：</p>
+<p><img src="https://s2.loli.net/2024/09/12/6tEyGNxsK5JLQwM.png"></p>
+<p>可以看出两个 Bean 都是在主线程里面初始化的，由于是串行启动，耗费的时间为 10s。</p>
+<p>基于我们这个案例，如果能异步初始化的话，那么理论上 5s 的时间就可以完成初始化。</p>
+<p>那么我们怎么让它异步起来呢？</p>
+<p>前面官方说了，要用 BACKGROUND 注解。</p>
+<p>首先，我们要把 @Bean 的地方改造一下：</p>
+<blockquote>
+<p>@Bean(bootstrap = Bean.Bootstrap.BACKGROUND)</p>
+</blockquote>
+<p><img src="https://s2.loli.net/2024/09/12/tZDVOTe63PLjQ4b.png" alt="img"></p>
+<p>随便看一下这个 BACKGROUND 是啥情况：</p>
+<p><img src="https://s2.loli.net/2024/09/12/NO6J7pkX3ulFoC8.png" alt="img"></p>
+<p>通过源码我们可以知道，在 6.2 之后，@Bean 注解里面提供了一个 Bootstrap 枚举，有两个取值。</p>
+<p>DEFAULT，和原来一样，串行初始化，该值也是默认值：</p>
+<p><img src="https://s2.loli.net/2024/09/12/JAOtEGonZ8vRjB1.png" alt="img"></p>
+<p>BACKGROUND，表示这个 Bean 需要异步初始化。</p>
+<p>那么加入 BACKGROUND 标识之后，是不是就代表改造完成，可以异步化了呢？</p>
+<p>在这个时候，启动项目，我们可以看到这样的提示：</p>
+<p><img src="https://s2.loli.net/2024/09/12/EGk1dJlbwce38OP.png" alt="img"></p>
+<blockquote>
+<p>Bean ‘whyBean’ marked for background initialization without bootstrap executor configured - falling back to mainline initialization</p>
+</blockquote>
+<p>这波提示非常清晰，说 whyBean 这个 Bean 标注了需要异步初始化，但是却没有找到 bootstrap 线程池配置，所以回退到主线程初始化模式。</p>
+<p>这也就是前面官方提到的这句话：</p>
+<p><img src="https://s2.loli.net/2024/09/12/StyGHnm4dwE8vfN.png" alt="img"></p>
+<p>也就是说我们还要搞个名字叫做 bootstrapExecutor 的线程池：</p>
+<p><img src="https://s2.loli.net/2024/09/12/DtA2jxT8UWyuPBV.png" alt="img"></p>
+<p>再次启动，可以发现已经是在异步线程中初始化了，启动时间也来到了 5s：</p>
+<p><img src="https://s2.loli.net/2024/09/12/v8l7JNnCp5mQd4M.png" alt="image-20240912003841854"></p>
+<p>一个最简单的 Demo 就算是演示完成了。</p>
+<p>就上面这个 Demo 你照着抄过去，应该花不了五分钟时间吧？</p>
+<p>自己拿到本地去跑跑，翻翻源码，debug 一把，这不就是新知识 Get 吗？</p>
+<p>然后再搞一点其他的稍微复杂的场景，比如 Bean 之间有依赖的情况。</p>
+<p>异步的 Bean 里面依赖了同步的 Bean。</p>
+<p>同步的 Bean 里面有异步的 Bean。</p>
+<p>上面这些情况，Spring 是否支持，如果支持是怎么处理的，如果不支持会抛出什么样的异常。</p>
+<p>这些就当是课后作业吧，我就不手摸手教学了。</p>
+<p>主要是我看了一下这部分源码，真的是太好 debug 了，顺着源码往下看就行了。</p>
+<p>这个“太好 debug” 具体体现在什么地方，我给你举一个简单的小例子。</p>
+<p>比如刚刚我们提到的线程池，名称必须叫做 bootstrapExecutor，你改个名字就不灵了</p>
+<p>你问为什么？</p>
+<p>别问，源码之下无秘密。</p>
+<p>你可以通过两个方式去找答案。</p>
+<p>第一个是通过日志：</p>
+<blockquote>
+<p>[main] INFO org.springframework.beans.factory.support.DefaultListableBeanFactory - Bean ‘whyBean’ marked for background initialization without bootstrap executor configured - falling back to mainline initialization</p>
+</blockquote>
+<p>通过上面这行日志，我们可以在对应类里面找到对应打印的地方：</p>
+<p><img src="https://s2.loli.net/2024/09/12/bm9yOiRjkCPQu3s.png" alt="img"></p>
+<p>当 getBootstrapExecutor 返回为 null 的时候就会打印这个日志。</p>
+<p>那么什么时候不为 null 呢？</p>
+<p>可以看看 bootstrapExecutor 对应的 set 方法：</p>
+<p><img src="https://s2.loli.net/2024/09/12/4eWcPyU2E1AVF9g.png" alt="img"></p>
+<p>只有一个地方在调用这个方法，这就是我说的“太好 Debug”的表现之一。</p>
+<p>然后点过去一看，是要从 beanFactory 里面拿出一个叫做 bootstrapExecutor 的 bean 放进去：</p>
+<p><img src="https://s2.loli.net/2024/09/12/XwY7VfvoKGhxjk5.png" alt="img"></p>
+<p>bootstrapExecutor，是写死在源码里面的，所以你换另外一个 xxxExecutor，源码也不识别啊。</p>
+<p>另外一个方式就是正向去找。</p>
+<p>首先我们知道 BACKGROUND 是我们的一个“抓手”，而这个抓手在源码中也只有一个地方被调用：</p>
+<p><img src="https://s2.loli.net/2024/09/12/NgLGiEaC248dm5w.png" alt="img"></p>
+<p>点过去之后发现这里是把 backgroundInit 设置为 true：</p>
+<p><img src="https://s2.loli.net/2024/09/12/uKxG75nBw38sbhZ.png" alt="img"></p>
+<p>然后看 backgroundInit 标识被使用的地方：</p>
+<p><img src="https://s2.loli.net/2024/09/12/WodrAtEjHySIp1D.png" alt="img"></p>
+<p>又可以找到这里来：</p>
+<p><img src="https://s2.loli.net/2024/09/12/FEoC1bQGB5viq6A.png" alt="img"></p>
+<p>这不就和前面呼吁上了。</p>
+<p>这部分真的是太好 debug 了，我不骗你，你自己玩去吧。</p>
+<h2 id="思考"><a href="#思考" class="headerlink" title="思考"></a><strong>思考</strong></h2><p>在大概摸清楚具体实现之后，歪师傅开始思考另外一个问题：Spring 为什么要支持 Bean 的异步初始化？</p>
+<p>异步化，核心目标是为了加速项目启动，减少项目启动时间嘛。</p>
+<p>按照官方最开始的说法，项目启动慢，应该是用户找到启动慢的根本原因，而不是想着异步化这个治标不治本的方法。</p>
+<p>比如在前面的 issue 里面，有个老哥说：我这边有个应用启动花了 2 小时 30 分…</p>
+<p>在 2011 年，官方是这样回复的：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20240519172137.png" alt="img"></p>
+<p>他们的核心观点还是：在 Spring 容器中并行化 Bean 初始化的好处对于少数使用 Spring 的应用程序来说是非常重要的，而坏处是不可避免的 Bug、增加的复杂性和意想不到的副作用，这些可能会影响所有使用 Spring 的应用程序，恐怕这不是一个有吸引力的前景。</p>
+<p>言外之意就是：我不改。</p>
+<p>官方希望看到的是用户去寻找启动慢的真正原因。</p>
+<p>用户希望的是官方提供一个异步化的方法先来解决当前的问题。</p>
+<p>官方和用户都知道这是一个治标不治本的方案。</p>
+<p>官方觉得没有必要，或者“太 low”，这样的代码不应该出现在我们的项目中，因为用户没有按照我的预期去使用对应代码。</p>
+<p>用户觉得我不管治标还是治本，只要能解决问题就行。</p>
+<p>这个时候就出现了分歧。</p>
+<p>这个分歧甚至长达 13 年之久。在这期间官方和用户反复拉扯，都难以达成一致。</p>
+<p>终于，在 6.2 版本里面，官方还是妥协了，Bean 的异步初始化终于还是落地了。</p>
+<p>13 年的时间已经足够长了，长到 Spring 的用户群体已经爆炸式的增长，官方不得不足够重视用户反复提起的需求。</p>
+<p>即使这个需求在官方看来是不合理的，这个解决方案看起来是不优雅的，但是由于用户需要，所以不得不提供。</p>
+<p>你看这个场景像不像是你在工作中接到了一个自认为不合理的需求，但是却不得不去实施一样。</p>
+<p>或者像不像在你精心搭建的系统中，必须加入一坨你觉得很难接受的代码。</p>
+<p>就像你刚刚开始工作的时候，甚至有一点代码洁癖。</p>
+<p>然后随着需求的叠加、时间的推移、日复一日的重复之后，开始变成“又不是不能用”。</p>
+<p>没关系，都是会变的。</p>
+]]></content>
+      <categories>
+        <category>spring</category>
+      </categories>
+      <tags>
+        <tag>spring</tag>
       </tags>
   </entry>
 </search>
