@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.2">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<link rel="stylesheet" href="//fonts.googleapis.com/css?family=Lato:300,300italic,400,400italic,700,700italic|Lobster Two:300,300italic,400,400italic,700,700italic|PT Mono:300,300italic,400,400italic,700,700italic&display=swap&subset=latin,latin-ext">
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"pawnhuang.github.io","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="前两天在看 SOFABoot 的时候，看到一个让我眼前一亮的东西，来给大家盘一下。 SOFABoot，你可能不眼熟，但是没关系，本文也不是给你讲这个东西的，你就认为它是 SpringBoot 的变种就行了。 因为有蚂蚁金服背书，所以主要是一些金融类的公司在使用这个框架：  官方介绍是这样的：">
+<meta property="og:type" content="article">
+<meta property="og:title" content="68行代码解决spring 异步初始化">
+<meta property="og:url" content="https://pawnhuang.github.io/2024/09/18/spring/68%E8%A1%8C%E4%BB%A3%E7%A0%81%E8%A7%A3%E5%86%B3spring%20%E5%BC%82%E6%AD%A5%E5%88%9D%E5%A7%8B%E5%8C%96/index.html">
+<meta property="og:site_name" content="Fake it till you make it">
+<meta property="og:description" content="前两天在看 SOFABoot 的时候，看到一个让我眼前一亮的东西，来给大家盘一下。 SOFABoot，你可能不眼熟，但是没关系，本文也不是给你讲这个东西的，你就认为它是 SpringBoot 的变种就行了。 因为有蚂蚁金服背书，所以主要是一些金融类的公司在使用这个框架：  官方介绍是这样的：">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604120816.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230602131043.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604115640.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602213809.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604120136.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602223022.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602215649.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602215957.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602220133.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602223116.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602224138.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602225116.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604115759.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602234944.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602235619.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604120602.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603115028.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603115234.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603115508.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603115919.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603120216.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603120316.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603120515.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603120855.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603121026.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603121509.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604121059.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604121507.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603135527.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603140018.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603140115.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603140231.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603140500.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603140819.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603141650.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603142054.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603142346.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603145212.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604123708.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604122410.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603150110.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603155626.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603155716.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603155920.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603155854.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603161227.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603161400.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603162548.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603162711.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603164317.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603165115.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603165418.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603165659.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604124426.png">
+<meta property="og:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603170100.png">
+<meta property="article:published_time" content="2024-09-18T03:32:19.000Z">
+<meta property="article:modified_time" content="2024-09-18T15:19:03.084Z">
+<meta property="article:author" content="Pawn Huang">
+<meta property="article:tag" content="spring">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604120816.png">
+
+<link rel="canonical" href="https://pawnhuang.github.io/2024/09/18/spring/68%E8%A1%8C%E4%BB%A3%E7%A0%81%E8%A7%A3%E5%86%B3spring%20%E5%BC%82%E6%AD%A5%E5%88%9D%E5%A7%8B%E5%8C%96/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>68行代码解决spring 异步初始化 | Fake it till you make it</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Fake it till you make it</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Pawn Huang's Blog</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://pawnhuang.github.io/2024/09/18/spring/68%E8%A1%8C%E4%BB%A3%E7%A0%81%E8%A7%A3%E5%86%B3spring%20%E5%BC%82%E6%AD%A5%E5%88%9D%E5%A7%8B%E5%8C%96/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/upload/avatar.png">
+      <meta itemprop="name" content="Pawn Huang">
+      <meta itemprop="description" content="一个非典型程序员">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Fake it till you make it">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          68行代码解决spring 异步初始化
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+              
+
+              <time title="创建时间：2024-09-18 11:32:19 / 修改时间：23:19:03" itemprop="dateCreated datePublished" datetime="2024-09-18T11:32:19+08:00">2024-09-18</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/spring/" itemprop="url" rel="index"><span itemprop="name">spring</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">本文字数：</span>
+              <span>11k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">阅读时长 &asymp;</span>
+              <span>10 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>前两天在看 SOFABoot 的时候，看到一个让我眼前一亮的东西，来给大家盘一下。</p>
+<p>SOFABoot，你可能不眼熟，但是没关系，本文也不是给你讲这个东西的，你就认为它是 SpringBoot 的变种就行了。</p>
+<p>因为有蚂蚁金服背书，所以主要是一些金融类的公司在使用这个框架：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604120816.png" alt="img"></p>
+<p>官方介绍是这样的：</p>
+<blockquote>
+<p>SOFABoot 是蚂蚁金服开源的基于 Spring Boot 的研发框架，它在 Spring Boot 的基础上，提供了诸如 Readiness Check，类隔离，日志空间隔离等能力。在增强了 Spring Boot 的同时，SOFABoot 提供了让用户可以在 Spring Boot 中非常方便地使用 SOFA 中间件的能力。</p>
+</blockquote>
+<p>上面这些功能都很强大，但是我主要是分享一下它的这个小功能：</p>
+<blockquote>
+<p><a target="_blank" rel="noopener" href="https://help.aliyun.com/document_detail/133162.html">https://help.aliyun.com/document_detail/133162.html</a></p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/79/20230602131043.png" alt="img"></p>
+<p>这个功能可以让 Bean 的初始化方法在异步线程里面执行，从而加快 Spring 上下文加载过程，提高应用启动速度。</p>
+<p>为什么看到功能的时候，我眼前一亮呢，因为我很久之前写过这篇文章<a target="_blank" rel="noopener" href="https://mp.weixin.qq.com/s/-qzXuiE7fcGS7JXxFbu6jg">《我是真没想到，这个面试题居然从11年前就开始讨论了，而官方今年才表态。》</a></p>
+<p>里面提到的面试题是这样的：</p>
+<blockquote>
+<p>Spring 在启动期间会做类扫描，以单例模式放入 ioc。但是 spring 只是一个个类进行处理，如果为了加速，我们取消 spring 自带的类扫描功能，用写代码的多线程方式并行进行处理，这种方案可行吗？为什么？</p>
+</blockquote>
+<p>当时通过 issue 找到了官方对于这个问题回复总结起来就是：应该是先找到启动慢的根本原因，而不是把问题甩锅给 Spring。这部分对于 Spring 来说，能不动，就别动。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604115640.png" alt="img"></p>
+<p>仅从“启动加速-异步初始化方法”这个标题上来看，Spring 官方不支持的东西 SOFABoot 支持了。所以这玩意让我眼前一亮，我倒要看看你是怎么搞得。</p>
+<p>先说结论：SOFABoot 的方案能从一定程度上解决问题，但是它依赖于我们编码的时候指定哪些 Bean 是可以异步初始化的，这样带来的好处是不必考虑循环依赖、依赖注入等等各种复杂的情况了，坏处就是需要程序员自己去识别哪些类是可以异步初始化的。</p>
+<p>我倒是觉得，程序员本来就应该具备“识别自己的项目中哪些类是可以异步初始化”的能力。</p>
+<p>但是，一旦要求程序员来主动去识别了，就已经“输了”，已经不够惊艳了，在实现难度上就不是一个级别的事情了。人家 Spring 想的可是框架给你全部搞定，顶多给你留一个开关，你开箱即用，啥都不用管。</p>
+<p>但是总的来说，作为一次思路演变为源码的学习案例来说，还是很不错的。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602213809.png" alt="img"></p>
+<p>我们主要是看实现方案和具体逻辑代码，以 SOFABoot 为抓手，针对其“异步初始化方法”聚焦下钻，把源码当做纽带，协同 Spring，打出一套“我看到了-&gt;我会用了-&gt;我拿过来-&gt;我看懂了-&gt;是我的了-&gt;写进简历”的组合拳。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604120136.png" alt="img"></p>
+<h2 id="Demo"><a href="#Demo" class="headerlink" title="Demo"></a><strong>Demo</strong></h2><p>先搞个 Demo 出来，演示一波效果，先让你直观的看到这是个啥玩意。</p>
+<p>这个 Demo 非常之简单，几行代码就搞定。</p>
+<p>先搞两个 java 类，里面有一个 init 方法：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602223022.png" alt="img"></p>
+<p>然后把他们作为 Bean 交给 Spring 管理，Demo 就搭建好了：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602215649.png" alt="img"></p>
+<p>直接启动项目，启动时间只需要 1.152s，非常丝滑：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602215957.png" alt="img"></p>
+<p>然后，注意，我要稍微的变一下形。</p>
+<p>在注入 Bean 的时候触发一下初始化方法，模拟实际项目中在 Bean 的初始化阶段，既在 Spring 项目启动过程中，做一些数据准备、配置拉取等相关操作：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602220133.png" alt="img"></p>
+<p>再次重启一下项目，因为需要执行两个 Bean 的初始化动作，各需要 5s 时间，而且是串行执行，所以启动时间直接来到了 11.188s：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602223116.png" alt="img"></p>
+<p>那么接下来，就是见证奇迹的时刻了。</p>
+<p>我加上 @SofaAsyncInit 这样的一个注解：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602224138.png" alt="img"></p>
+<p>你先别管这个注解是哪里来的，从这个注解的名称你也知道它是干啥的：异步执行初始化。</p>
+<p>这个时候我再启动项目：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602225116.png" alt="img"></p>
+<p>从日志中可以看到：</p>
+<ol>
+<li>whyBean 和 maxBean 的 init 方法是由两个不同的线程并行执行的。</li>
+<li>启动时间缩短到了 6.049s。</li>
+</ol>
+<p>所以 @SofaAsyncInit 这个注解实现了“指定 Bean 的初始化方法实现异步化”。</p>
+<p>你想想，如果你有 10 个 Bean，每个 Bean 都需要 1s 的时间做初始化，总计 10s。</p>
+<p>但是这些 Bean 之间其实不需要串行初始化，那么用这个注解，并行只需要 1s，搞定。</p>
+<p>到这里，你算是看到了这样的东西存在，属于“我看到了”。</p>
+<p>接下来，我们进入到“我会用了”这个环节。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604115759.png" alt="img"></p>
+<h2 id="怎么来的。"><a href="#怎么来的。" class="headerlink" title="怎么来的。"></a><strong>怎么来的。</strong></h2><p>在解读原理之前，我还得告诉你这个注解到底是怎么来的。</p>
+<p>它属于 SOFABoot 框架里面的注解，首先你得把你的 SpringBoot 修改为 SOFABoot。</p>
+<p>这一步参照官方文档中的“快速开始”部分，非常的简单：</p>
+<blockquote>
+<p><a target="_blank" rel="noopener" href="https://www.sofastack.tech/projects/sofa-boot/quick-start/">https://www.sofastack.tech/projects/sofa-boot/quick-start/</a></p>
+</blockquote>
+<p>第一步就是把项目中 pom.xml 中的：</p>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">parent</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">groupId</span>&gt;</span>org.springframework.boot<span class="tag">&lt;/<span class="name">groupId</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">artifactId</span>&gt;</span>spring-boot-starter-parent<span class="tag">&lt;/<span class="name">artifactId</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">version</span>&gt;</span>$&#123;spring.boot.version&#125;<span class="tag">&lt;/<span class="name">version</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">relativePath</span>/&gt;</span> </span><br><span class="line"><span class="tag">&lt;/<span class="name">parent</span>&gt;</span></span><br></pre></td></tr></table></figure>
+
+<p>替换为：</p>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">parent</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">groupId</span>&gt;</span>com.alipay.sofa<span class="tag">&lt;/<span class="name">groupId</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">artifactId</span>&gt;</span>sofaboot-dependencies<span class="tag">&lt;/<span class="name">artifactId</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">version</span>&gt;</span>$&#123;sofa.boot.version&#125;<span class="tag">&lt;/<span class="name">version</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">parent</span>&gt;</span></span><br></pre></td></tr></table></figure>
+
+<p>这里的 ${sofa.boot.version} 指定具体的 SOFABoot 版本，我这里使用的是最新的 3.18.0 版本。</p>
+<p>然后我们要使用 @SofaAsyncInit 注解，所以需要引入以下 maven：</p>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">dependency</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">groupId</span>&gt;</span>com.alipay.sofa<span class="tag">&lt;/<span class="name">groupId</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">artifactId</span>&gt;</span>runtime-sofa-boot-starter<span class="tag">&lt;/<span class="name">artifactId</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">dependency</span>&gt;</span></span><br></pre></td></tr></table></figure>
+
+<p>对于 pom.xml 文件的变化，就只有这么一点：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602234944.png" alt="img"></p>
+<p>最后，在工程的 application.properties 文件下添加 SOFABoot 工程一个必须的参数配置，spring.application.name，用于标示当前应用的名称</p>
+<figure class="highlight ini"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># Application Name</span></span><br><span class="line"><span class="attr">spring.application.name</span>=SOFABoot Demo</span><br></pre></td></tr></table></figure>
+
+<p>就搞定了，我就完成了一个从 SpringBoot 切换为 SOFABoot 这个大动作。</p>
+<p>当然了，我这个是一个 Demo 项目，结构和 pom 依赖都非常简单，所以切换起来也非常容易。如果你的项目比较大的话，可能会遇到一些兼容性的问题。</p>
+<p>但是，注意我要说但是了。</p>
+<p>你是在学习摸索阶段，Demo 一定要简单，越小越好，越纯净越好。所以这个切换的动作对你搭建的一个全新的 Demo 项目来说没啥难度，不会遇到任何问题。</p>
+<p>这个时候，你就可以使用 @SofaAsyncInit 注解了：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230602235619.png" alt="img"></p>
+<p>到这里，恭喜你，会用了。</p>
+<h2 id="拿来吧你"><a href="#拿来吧你" class="headerlink" title="拿来吧你"></a><strong>拿来吧你</strong></h2><p>不知道你看到这里是什么感受。</p>
+<p>反正对于我来说，如果仅仅是为了让我能使用这个注解，达到异步初始化的目的，要让我从熟悉的 SpringBoot 修改为听都没听过的 SOFABoot，即使这个框架背后有阿里给它背书，我肯定也是不会这么干的。</p>
+<p>所以，对于这一类“人有我无”的东西，我都是采取“拿来吧你”策略。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604120602.png" alt="img"></p>
+<p>你想，最开始的我就说了，SOFABoot 是 SpringBoot 的变种，它的底层还是 SpringBoot。</p>
+<p>而 SOFABoot 又是开源的，整个项目的源码我都有了：</p>
+<blockquote>
+<p><a target="_blank" rel="noopener" href="https://github.com/sofastack/sofa-boot/blob/master/README_ZH.md">https://github.com/sofastack/sofa-boot/blob/master/README_ZH.md</a></p>
+</blockquote>
+<p>从其中剥离出一个基于 SpringBoot 做的小功能，融入到我自己的 SpringBoot 项目中，还玩意难道不是手到擒来的事情？</p>
+<p>不过就是稍微高级一点的 cv 罢了。</p>
+<p>首先，你得把 SOFABoot 的源码下载下来，或者在另外的一个项目中引用它，把自己的项目恢复为一个 SpringBoot 项目。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603115028.png" alt="img"></p>
+<p>我这边是直接把 SOFABoot 源码搞下来了，先把源码里面的 @SofaAsyncInit 注解粘到项目里面来，然后从 @SofaAsyncInit 注解入手，发现除了测试类只有一个 AsyncInitBeanFactoryPostProcessor 类在对其进行使用：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603115234.png" alt="img"></p>
+<p>所以把这个类也搬运过来。</p>
+<p>搬运过来之后你会发现有一些类找不到导致报错：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603115508.png" alt="img"></p>
+<p>针对这部分类，你可以采取无脑搬运的方式，也可以稍加思考替换一些。</p>
+<p>比如我就分为了两种类型：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603115919.png" alt="img"></p>
+<p>标号为 ① 的部分，我是直接粘贴到自己的项目中，然后使用项目中的类。</p>
+<p>标号为 ② 的部分，比如 BeanLoadCostBeanFactory 和 SofaBootConstants，他们的目的是为了获取一个 moduleName 变量：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603120216.png" alt="img"></p>
+<p>我也不知道这个 moduleName 是啥，所以我采取的策略是自己指定一个：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603120316.png" alt="img"></p>
+<p>至于 ErrorCode 和 SofaLogger，日志相关的，就用自己项目里面的日志就行了。</p>
+<p>就是这个意思：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603120515.png" alt="img"></p>
+<p>这样处理完成之后，AsyncInitBeanFactoryPostProcessor 类不报错了，接着看这个类在哪里使用到了。</p>
+<p>就这样顺藤摸瓜，最后搬运完成之后，就是这些类移过来了：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603120855.png" alt="img"></p>
+<p>除了这些类之外，你还会把这个 spring.factories 搬运过来，在项目启动时把这几个相关的类加载进去：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603121026.png" alt="img"></p>
+<p>然后再次启动这个和 SOFABoot 没有一点关系的项目：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603121509.png" alt="img"></p>
+<p>你会发现，你的项目也具备异步初始化 Bean 的功能了。</p>
+<p>你要再进一步，把它直接封装为一个 spring-boot-starter-asyncinitbean，发布到你们公司的私服里面。</p>
+<p>其他团队也能开箱即用的使用这个功能了。</p>
+<p>别问，问就是你自己独立开发出来的，掌握全部源码，技术风险可控：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604121059.png" alt="img"></p>
+<h2 id="啃原理"><a href="#啃原理" class="headerlink" title="啃原理"></a><strong>啃原理</strong></h2><p>在开始啃原理之前，我先多比比两句。</p>
+<p>我写文章的时候，为什么要把“拿来吧你”这一小节放在“啃原理”之前，我是有考虑的。</p>
+<p>当我们把“异步初始化”这个功能点剥离出来之后，你会发现，要实现这个功能，一共也没涉及到几个类。</p>
+<p>聚焦点从一整个项目变成了几个类而已，至少从感官上不会觉得那么的难，对阅读其源码产生太大的抗拒心理。</p>
+<p>而我之前很多关于源码阅读的文章，都强调过这一点：带着疑问去调试源码，要抓住主干，谨防走偏。</p>
+<p>前面这一小节，不过是把这一句话具化了而已。即使没有把这些类剥离出来，你直接基于 SOFABoot 来调试这个功能。在你搞清楚“异步初始化”这个功能的实现原理之前，理论上你的关注点和注意力不应该被上面这些类之外的任何一个类给吸引走。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604121507.png" alt="img"></p>
+<p>接下来，我们就带你啃一下原理。</p>
+<p>关于原理部分，我们的突破口肯定是看 @SofaAsyncInit 这个注解的在哪个地方被解析的。</p>
+<p>你仔细看这个注解里面有一个 value 属性，默认为 true，上面的注解说：用来标注是否应该对 init 方法进行异步调用。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603135527.png" alt="img"></p>
+<p>而使用到这个 value 值的地方，就只有下面这一个地方：</p>
+<blockquote>
+<p>com.alipay.sofa.runtime.spring.AsyncInitBeanFactoryPostProcessor#registerAsyncInitBean</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603140018.png" alt="img"></p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603140115.png" alt="img"></p>
+<p>判断为 true 的时候，执行了一个 registerAsyncInitBean 方法。</p>
+<p>从方法名称也知道，它是把可以异步执行的 init 方法的 Bean 收集起来。</p>
+<p>所以看源码可以看出，这里面是用 Map 来进行的存储，提供了一个 register 和 get 方法：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603140231.png" alt="img"></p>
+<p>那么这个 Map 里面到底放的是啥呢？</p>
+<p>我也不知道，打个断点瞅一眼，不就行了：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603140500.png" alt="img"></p>
+<p>通过断点调试，我们知道这个里面把项目中哪些 Bean 可以异步执行 init 方法通过 Map 存放了起来。</p>
+<p>那么问题就来了：它怎么知道哪些 Bean 可以异步执行 init 呢？</p>
+<p>很简单啊，因为我在对应的 Bean 上打上了 @SofaAsyncInit 注解。所以可以通过扫描注解的方式找到这些 Bean。</p>
+<p>所以你说 AsyncInitBeanFactoryPostProcessor 这个类是在干啥？</p>
+<p>肯定核心逻辑就是在解析标注了 @SofaAsyncInit 注解的地方嘛。</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603140819.png" alt="img"></p>
+<p>到这里，我们通过注解的 value 属性，找到了 AsyncInitBeanHolder 这个关键类。</p>
+<p>知道了这个类里面有一个 Map，里面维护的是所有可以异步执行 init 方法的 Bean 和其对应的 init 方法。</p>
+<p>好，你思考一下，接下来应该干啥？</p>
+<p>接下来肯定是看哪个地方在从这个 Map 里面获取数据出来，获取数据的时候，就说明是要异步执行这个 Bean 的 init 方法的时候。</p>
+<p>不然它把数据放到 Map 里面干啥？玩吗？</p>
+<p>调用 getAsyncInitMethodName 方法的地方，也在 AsyncProxyBeanPostProcessor 类里面：</p>
+<blockquote>
+<p>com.alipay.sofa.runtime.spring.AsyncProxyBeanPostProcessor#postProcessBeforeInitialization</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603141650.png" alt="img"></p>
+<p>AsyncProxyBeanPostProcessor 类实现了 BeanPostProcessor 接口，并重新了其 postProcessBeforeInitialization 方法。</p>
+<p>在这个 postProcessBeforeInitialization 方法里面，执行了从 Map 里面拿对象的动作。</p>
+<p>如果获取到了则通过 AOP 编程，编织进一个 AsyncInitializeBeanMethodInvoker 方法。</p>
+<p>把 bean, beanName, methodName 都传递了进去：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603142054.png" alt="img"></p>
+<p>所以关键点，就在 AsyncInitializeBeanMethodInvoker 里面，因为这个里面有真正判断是否要进行异步初始化的逻辑，主要解读一下这个类。</p>
+<p>首先，关注一下它的这三个参数：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603142346.png" alt="img"></p>
+<ul>
+<li>initCountDownLatch：是 CountDownLatch 对象，其中 count 初始化为 1</li>
+<li>isAsyncCalling：表示是否正在异步执行 init 方法。</li>
+<li>isAsyncCalled：表示是否已经异步执行过 init 方法。</li>
+</ul>
+<p>通过这三个字段，就可以感知到一个 Bean 是否已经或者正在异步执行其 init 方法。</p>
+<p>这个类的核心逻辑就是把可以异步执行、但是还没有执行 init 方法的 bean ，把它的 init 方法扔到线程池里面去执行：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603145212.png" alt="img"></p>
+<p>看一下在上面的 invoke 方法中的 if 方法：</p>
+<blockquote>
+<p>if (!isAsyncCalled &amp;&amp; methodName.equals(asyncMethodName))</p>
+</blockquote>
+<p>isAsyncCalled，首先判断是否已经异步执行过这个 bean 的 init 方法了。</p>
+<p>然后看看 methodName.equals(asyncMethodName)，要反射调用的方法是否是之前在 map 中维护的 init 方法。</p>
+<p>如果都满足，就扔到线程池里面去执行，这样就算是完成了异步 init。</p>
+<p>如果不满足呢？</p>
+<p>首先，你想想不满足的时候说明什么情况？</p>
+<p>是不是说明一个 Bean 的 init 方法在项目启动过程中不只被调用一次。</p>
+<p>就像是这样：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604123708.png" alt="img"></p>
+<p>虽然，我不知道为什么一个 Bean 要执行两次 init 方法，大概率是代码写的有问题。</p>
+<p>但是我不说，我也不给你抛出异常，我反正就是给你兼容了。</p>
+<p>所以，这段代码就是在处理这个情况：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604122410.png" alt="img"></p>
+<p>如果发现有多次调用，那么只要第一次异步初始化完成了，即 isAsyncCalling 为 false ，你可以继续执行反射调用初始化方法的动作。</p>
+<p>这个 invoke 方法的逻辑就是这样，主要是有一个线程池在里面。</p>
+<p>那么这个线程池是哪里来的呢？</p>
+<blockquote>
+<p>com.alipay.sofa.runtime.spring.async.AsyncTaskExecutor</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603150110.png" alt="img"></p>
+<p>在第一次 submit 任务的时候，框架会帮我们初始化一个线程池出来。</p>
+<p>然后通过这个线程池帮我们完成异步初始化的目标。</p>
+<p>所以你想想，整个过程是非常清晰的。首先找出来哪些 Bean 上标注了 @SofaAsyncInit 注解，找个 Map 维护起来，接着搞个 AOP 切面，看看哪些 Bean 能在 Map 里面找到，在线程池里面通过动态代理，调用其 init 方法。</p>
+<p>就完了。</p>
+<p>对不对？</p>
+<p>好，那么问题就来了？</p>
+<p>为什么我不直接在 init 方法里面搞个线程池呢，就像是这样。</p>
+<p>先注入一个自定义线程池，同时注释掉 @SofaAsyncInit 注解：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603155626.png" alt="img"></p>
+<p>在指定 Bean 的 init 方法中使用该线程池：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603155716.png" alt="img"></p>
+<p>这也不也是能达到“异步初始化”的目的吗？</p>
+<p>你说对不对？</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603155920.png" alt="img"></p>
+<p>不对啊，对个锤子对。</p>
+<p>你看启动日志：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603155854.png" alt="img"></p>
+<p>服务已经启动完成了，但是 4s 之后，Bean 的 init 方法才执行完毕。</p>
+<p>在这期间，如果有请求要使用对应的 Bean 怎么办？</p>
+<p>拿着一个还未执行完成 init 方法的 Bean 框框一顿用，这画面想想就很美。</p>
+<p>所以怎么办？</p>
+<p>我也不知道，看一下 SOFABoot 里面是怎么解决这个问题的。</p>
+<p>在我们前面提到的线程池里面，有这样的一个方法：</p>
+<blockquote>
+<p>com.example.asyncthreadpool.spring.AsyncTaskExecutor#ensureAsyncTasksFinish</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603161227.png" alt="img"></p>
+<p>在这个方法里面，调用了 future 的 get 方法进行阻塞等待。当所有的 future 执行完成之后，会关闭线程池。</p>
+<p>这个 FUTURES 是什么玩意，怎么来的？</p>
+<p>它就是执行 submitTask 方法时，维护进行去的，里面装的就是一个个异步执行的 init 方法：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603161400.png" alt="img"></p>
+<p>所以它通过这个方法可以确保能感知到所有的通过这个线程池执行的 init 方法都执行完毕。</p>
+<p>现在，方法有了，你先思考一下，我们什么时候触发这个方法的调用呢？</p>
+<p>是不是应该在 Spring 容器告诉你：小老弟，我这边所有的 Bean 都搞定了，你这边啥情况了？</p>
+<p>这个时候你就需要调用一下这个方法。</p>
+<p>而 Spring 容器加载完成之后，会发布这样的一个事件。也就是它：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603162548.png" alt="img"></p>
+<p>所以，SOFABoot 的做法就是监听这个事件：</p>
+<blockquote>
+<p>com.example.asyncthreadpool.spring.AsyncTaskExecutionListener</p>
+</blockquote>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603162711.png" alt="img"></p>
+<p>这样，即可确保在异步线程中执行的 init 方法的 Bean 执行完成之后，容器才算启动成功，对外提供服务。</p>
+<p>到这里，原理部分我算是讲完了。</p>
+<p>但是写到这里的时候，我突然冒出了一个写之前没有过的想法：在整个实现的过程中，最关键的有两个东西：</p>
+<ol>
+<li>一个 Map：里面维护的是所有可以异步执行 init 方法的 Bean 和其对应的 init 方法。</li>
+<li>一个线程池：异步执行 init 方法。</li>
+</ol>
+<p>而这个 Map 是怎么来的？</p>
+<p>不是通过扫描 @SofaAsyncInit 注解得到的吗？</p>
+<p>那么扫描出来的 @SofaAsyncInit 怎么来的？</p>
+<p>不就是我写代码的时候主动标注上去的吗？</p>
+<p>所以，我们是不是可以完全不用 Map ，直接使用异步线程池：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603164317.png" alt="img"></p>
+<p>剩去中间环节，直接一步到位，只需要留下两个类即可：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603165115.png" alt="img"></p>
+<p>我这里把这个两个类贴出来。</p>
+<p>AsyncTaskExecutionListener：</p>
+<figure class="highlight csharp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title">AsyncTaskExecutionListener</span> <span class="title">implements</span> <span class="title">PriorityOrdered</span>,</span><br><span class="line">                                       <span class="title">ApplicationListener</span>&lt;<span class="title">ContextRefreshedEvent</span>&gt;,</span><br><span class="line">                                       <span class="title">ApplicationContextAware</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> ApplicationContext applicationContext;</span><br><span class="line"></span><br><span class="line">    @Override</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">onApplicationEvent</span>(<span class="params">ContextRefreshedEvent <span class="keyword">event</span></span>)</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (applicationContext.<span class="keyword">equals</span>(<span class="keyword">event</span>.getApplicationContext())) &#123;</span><br><span class="line">            AsyncTaskExecutor.ensureAsyncTasksFinish();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    @Override</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="built_in">int</span> <span class="title">getOrder</span>()</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> Ordered.HIGHEST_PRECEDENCE + <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    @Override</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">setApplicationContext</span>(<span class="params">ApplicationContext applicationContext</span>) throws BeansException</span> &#123;</span><br><span class="line">        <span class="keyword">this</span>.applicationContext = applicationContext;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>AsyncTaskExecutor：</p>
+<figure class="highlight csharp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br></pre></td><td class="code"><pre><span class="line">@Slf4j</span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title">AsyncTaskExecutor</span> &#123;</span><br><span class="line">    <span class="keyword">protected</span> <span class="keyword">static</span> final <span class="built_in">int</span> CPU_COUNT = Runtime.getRuntime().availableProcessors();</span><br><span class="line">    <span class="keyword">protected</span> <span class="keyword">static</span> final AtomicReference&lt;ThreadPoolExecutor&gt; THREAD_POOL_REF = <span class="keyword">new</span> AtomicReference&lt;ThreadPoolExecutor&gt;();</span><br><span class="line"></span><br><span class="line">    <span class="keyword">protected</span> <span class="keyword">static</span> final List&lt;Future&gt; FUTURES = <span class="keyword">new</span> ArrayList&lt;&gt;();</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> Future <span class="title">submitTask</span>(<span class="params">Runnable runnable</span>)</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (THREAD_POOL_REF.<span class="keyword">get</span>() == <span class="literal">null</span>) &#123;</span><br><span class="line">            ThreadPoolExecutor threadPoolExecutor = createThreadPoolExecutor();</span><br><span class="line">            boolean success = THREAD_POOL_REF.compareAndSet(<span class="literal">null</span>, threadPoolExecutor);</span><br><span class="line">            <span class="keyword">if</span> (!success) &#123;</span><br><span class="line">                threadPoolExecutor.shutdown();</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        Future future = THREAD_POOL_REF.<span class="keyword">get</span>().submit(runnable);</span><br><span class="line">        FUTURES.<span class="keyword">add</span>(future);</span><br><span class="line">        <span class="keyword">return</span> future;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">private</span> <span class="keyword">static</span> ThreadPoolExecutor <span class="title">createThreadPoolExecutor</span>()</span> &#123;</span><br><span class="line">        <span class="built_in">int</span> threadPoolCoreSize = CPU_COUNT + <span class="number">1</span>;</span><br><span class="line">        <span class="built_in">int</span> threadPoolMaxSize = CPU_COUNT + <span class="number">1</span>;</span><br><span class="line">        log.info(String.format(</span><br><span class="line">                <span class="string">&quot;create why-async-init-bean thread pool, corePoolSize: %d, maxPoolSize: %d.&quot;</span>,</span><br><span class="line">                threadPoolCoreSize, threadPoolMaxSize));</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">new</span> ThreadPoolExecutor(threadPoolCoreSize, threadPoolMaxSize, <span class="number">30</span>,</span><br><span class="line">                TimeUnit.SECONDS, <span class="keyword">new</span> LinkedBlockingQueue&lt;&gt;(), <span class="keyword">new</span> ThreadPoolExecutor.CallerRunsPolicy());</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">ensureAsyncTasksFinish</span>()</span> &#123;</span><br><span class="line">        <span class="keyword">for</span> (Future future : FUTURES) &#123;</span><br><span class="line">            <span class="keyword">try</span> &#123;</span><br><span class="line">                future.<span class="keyword">get</span>();</span><br><span class="line">            &#125; <span class="keyword">catch</span> (Throwable e) &#123;</span><br><span class="line">                <span class="keyword">throw</span> <span class="keyword">new</span> RuntimeException(e);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        FUTURES.clear();</span><br><span class="line">        <span class="keyword">if</span> (THREAD_POOL_REF.<span class="keyword">get</span>() != <span class="literal">null</span>) &#123;</span><br><span class="line">            THREAD_POOL_REF.<span class="keyword">get</span>().shutdown();</span><br><span class="line">            THREAD_POOL_REF.<span class="keyword">set</span>(<span class="literal">null</span>);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>你只需要把这两个类,一共 68 行代码，粘到你的项目中，然后把 AsyncTaskExecutionListener 以 @Bean 的方式注入：</p>
+<figure class="highlight typescript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Bean</span></span><br><span class="line"><span class="keyword">public</span> <span class="title class_">AsyncTaskExecutionListener</span> <span class="title function_">asyncTaskExecutionListener</span>(<span class="params"></span>) &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="keyword">new</span> <span class="title class_">AsyncTaskExecutionListener</span>();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>恭喜你，你项目中的 Bean 也可以异步执行 init 方法了，使用方法就像这样式儿的：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603165418.png" alt="img"></p>
+<p>但是，如果你要对比这两种写的法的话：</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603165659.png" alt="img"></p>
+<p>肯定是选注解嘛，优雅的一比。</p>
+<p>所以，我现在问你一个问题：清理聊聊异步初始化 Bean 的思路。</p>
+<p>然后在追问你一个问题：如果通过自定义注解的方式实现？需要用到 Spring 的那些扩展点？</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230604124426.png" alt="img">还思考个毛啊，不就是这个过程吗？</p>
+<p><img src="https://why-image-1300252878.cos.ap-chengdu.myqcloud.com/img/20220716/20230603170100.png" alt="img"></p>
+<p>回想一下前面的内容，是不是品出点味道了，是不是有点感觉了，是不是觉得自己又行了？</p>
+<p>其实说真的，这个方案，当需要人来主动标识哪些 Bean 是可以异步初始化的时候，就已经“输了”，已经不够惊艳了。</p>
+<p>但是，你想想本文只是想教你“异步初始化”这个点吗？</p>
+<p>不是的，只是以“异步初始化”为抓手，试图教你一种源码解读的方法，找到撕开 Spring 框架的又一个口子，这才是重要的。</p>
+<p>最后，前两天阿里开发者公众号也发布了一篇叫<a target="_blank" rel="noopener" href="https://mp.weixin.qq.com/s/ZMIUXDc7yY64GDE70g3-kA">《Bean异步初始化，让你的应用启动飞起来》</a>的文章，想要达成的目的一样，但是最终的落地方案可以说差距很大。这篇文章没有具体的源码，但是也可以对比着看一下，取长补短，融会贯通。</p>
+<p>行了，我就带你走到这了，我只是给你指个路，剩下的路就要你自己走了。</p>
+<p>天黑路滑，灯火昏暗，抓住主干，及时回头。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/spring/" rel="tag"># spring</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2024/09/11/spring/spring%E5%BC%82%E6%AD%A5%E5%88%9D%E5%A7%8B%E5%8C%96bean%E5%AE%B9%E5%99%A8/" rel="prev" title="我滴天！spring支持异步初始化了？">
+      <i class="fa fa-chevron-left"></i> 我滴天！spring支持异步初始化了？
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Demo"><span class="nav-number">1.</span> <span class="nav-text">Demo</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%8E%E4%B9%88%E6%9D%A5%E7%9A%84%E3%80%82"><span class="nav-number">2.</span> <span class="nav-text">怎么来的。</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8B%BF%E6%9D%A5%E5%90%A7%E4%BD%A0"><span class="nav-number">3.</span> <span class="nav-text">拿来吧你</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%95%83%E5%8E%9F%E7%90%86"><span class="nav-number">4.</span> <span class="nav-text">啃原理</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Pawn Huang"
+      src="/upload/avatar.png">
+  <p class="site-author-name" itemprop="name">Pawn Huang</p>
+  <div class="site-description" itemprop="description">一个非典型程序员</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">30</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">15</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Pawn Huang</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+    <span title="站点总字数">223k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">3:23</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://pisces.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Pisces</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
